@@ -1,9 +1,6 @@
 services:
   ai-hardware-check:
-    # Replace with your Docker Hub image after pushing:
-    #   docker build -t YOUR_DOCKERHUB_USERNAME/ai-hardware-check .
-    #   docker push YOUR_DOCKERHUB_USERNAME/ai-hardware-check
-    image: YOUR_DOCKERHUB_USERNAME/ai-hardware-check:latest
+    image: gptvibe/ai-hardware-check:latest
     ports:
-      - "8080:80"
+      - "${HOST_PORT:-38421}:80"
     restart: unless-stopped

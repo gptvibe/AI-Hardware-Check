@@ -17,25 +17,34 @@ A browser-only tool that detects your system hardware and estimates which open-s
 
 ## Quick Start (Docker Hub)
 
-> Replace `YOUR_DOCKERHUB_USERNAME` with the actual image name after it is published.
-
 ```bash
 # Pull and run in one step
-docker run --rm -p 8080:80 YOUR_DOCKERHUB_USERNAME/ai-hardware-check
+docker run --rm -p 38421:80 gptvibe/ai-hardware-check
 ```
 
-Then open <http://localhost:8080>.
+Then open <http://localhost:38421>.
 
 ### docker-compose
 
 ```bash
-# docker-compose.yml is already in the repo — just edit the image name, then:
+# Clone the repo and run with compose
+git clone https://github.com/gptvibe/AI-Hardware-Check.git
+cd AI-Hardware-Check
 docker compose up -d
+```
+
+By default, compose exposes the app on port `38421`.
+To use a different port:
+
+```bash
+HOST_PORT=40123 docker compose up -d
 ```
 
 ## Local Development
 
 ```bash
+git clone https://github.com/gptvibe/AI-Hardware-Check.git
+cd AI-Hardware-Check
 npm install
 npm run dev        # http://localhost:5173
 ```
@@ -47,14 +56,17 @@ npm run build      # output in dist/
 npm run preview    # serve the built output locally
 ```
 
-## Docker (self-host / build from source)
+## Docker (build from source)
 
 ```bash
-# Build
 docker build -t ai-hardware-check .
+docker run --rm -p 38421:80 ai-hardware-check
+```
 
-# Run on port 8080
-docker run --rm -p 8080:80 ai-hardware-check
+Use any host port you want by changing the left side of `-p`, for example:
+
+```bash
+docker run --rm -p 40123:80 ai-hardware-check
 ```
 
 ## Adding Models
