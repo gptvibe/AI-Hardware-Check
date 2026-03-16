@@ -24,6 +24,14 @@ type QuantLevel = {
 
 type RecommendationTone = 'good' | 'borderline' | 'bad' | 'unknown'
 
+type ChipProfile = {
+  id: string
+  label: string
+  recommendedRamGb: number
+  speedMultiplier: number
+  note: string
+}
+
 type FamilyGroup = {
   name: string
   models: ModelDatabaseEntry[]
@@ -94,6 +102,119 @@ const RECOMMEND_ORDER = [
 const THEME_KEY = 'aihc-theme'
 const MODALITY_ORDER = ['Text', 'Image', 'Audio', 'Video']
 const DIRECT_DOWNLOAD_FORMATS = new Set(['FP16', 'BF16', 'FP8', 'Safetensors'])
+const RAM_OVERRIDE_OPTIONS = [
+  2, 3, 4, 6, 8, 12, 16, 24, 32,
+]
+const CHIP_PROFILES: ChipProfile[] = [
+  {
+    id: 'apple-m1',
+    label: 'Apple M1 (base)',
+    recommendedRamGb: 8,
+    speedMultiplier: 1.25,
+    note: 'Entry Apple Silicon baseline.',
+  },
+  {
+    id: 'apple-m1-pro',
+    label: 'Apple M1 Pro/Max',
+    recommendedRamGb: 16,
+    speedMultiplier: 1.45,
+    note: 'Higher GPU throughput and memory bandwidth.',
+  },
+  {
+    id: 'apple-m2',
+    label: 'Apple M2 (base)',
+    recommendedRamGb: 8,
+    speedMultiplier: 1.35,
+    note: 'Slight uplift over M1 generation.',
+  },
+  {
+    id: 'apple-m2-pro',
+    label: 'Apple M2 Pro/Max',
+    recommendedRamGb: 16,
+    speedMultiplier: 1.55,
+    note: 'Strong local inference profile.',
+  },
+  {
+    id: 'apple-m3',
+    label: 'Apple M3 (base)',
+    recommendedRamGb: 8,
+    speedMultiplier: 1.5,
+    note: 'Modern baseline for Apple laptops/desktops.',
+  },
+  {
+    id: 'apple-m3-pro',
+    label: 'Apple M3 Pro/Max',
+    recommendedRamGb: 18,
+    speedMultiplier: 1.75,
+    note: 'High-performance Apple Silicon tier.',
+  },
+  {
+    id: 'apple-m4',
+    label: 'Apple M4 (base)',
+    recommendedRamGb: 16,
+    speedMultiplier: 1.7,
+    note: 'Latest baseline Apple Silicon tier.',
+  },
+  {
+    id: 'apple-m4-pro',
+    label: 'Apple M4 Pro/Max',
+    recommendedRamGb: 24,
+    speedMultiplier: 1.95,
+    note: 'Top-end Apple Silicon profile.',
+  },
+  {
+    id: 'iphone-15',
+    label: 'iPhone 15',
+    recommendedRamGb: 6,
+    speedMultiplier: 0.95,
+    note: 'Baseline iPhone 15 profile.',
+  },
+  {
+    id: 'iphone-15-pro',
+    label: 'iPhone 15 Pro',
+    recommendedRamGb: 8,
+    speedMultiplier: 1.1,
+    note: 'iPhone 15 Pro profile with stronger GPU.',
+  },
+  {
+    id: 'iphone-16',
+    label: 'iPhone 16',
+    recommendedRamGb: 8,
+    speedMultiplier: 1.15,
+    note: 'iPhone 16 profile with improved efficiency.',
+  },
+  {
+    id: 'iphone-16-pro',
+    label: 'iPhone 16 Pro',
+    recommendedRamGb: 8,
+    speedMultiplier: 1.25,
+    note: 'Top iPhone profile for current generation.',
+  },
+  {
+    id: 'iphone-17',
+    label: 'iPhone 17',
+    recommendedRamGb: 8,
+    speedMultiplier: 1.28,
+    note: 'iPhone 17 baseline profile.',
+  },
+  {
+    id: 'iphone-17-pro',
+    label: 'iPhone 17 Pro',
+    recommendedRamGb: 8,
+    speedMultiplier: 1.38,
+    note: 'iPhone 17 Pro profile with stronger GPU.',
+  },
+  {
+    id: 'iphone-17e',
+    label: 'iPhone 17e',
+    recommendedRamGb: 8,
+    speedMultiplier: 1.2,
+    note: 'iPhone 17e efficiency-focused profile.',
+  },
+]
+const CHIP_PROFILE_BY_ID = Object.fromEntries(
+  CHIP_PROFILES.map((profile) => [profile.id, profile]),
+) as Record<string, ChipProfile>
 
 const USER_MODELS_KEY = 'aihc-user-models'
 
@@ -196,6 +317,29 @@ const estimateTokensPerSec = (
 const formatTokensPerSec = (value: number | null) =>
   value === null ? '--' : `~${value.toFixed(1)} tok/s`
 
+const applyChipPerformanceFactor = (
+  value: number | null,
+  profile: ChipProfile | null,
+): number | null => {
+  if (value === null || !profile) return value
+  const adjusted = value * profile.speedMultiplier
+  return Math.min(120, Math.max(0.2, adjusted))
+}
+
+const getAppleDeviceHint = (userAgent: string): string | null => {
+  const ua = userAgent.toLowerCase()
+  if (ua.includes('iphone')) {
+    return 'Detected iPhone. Choose your iPhone model profile for better estimates.'
+  }
+  if (ua.includes('ipad')) {
+    return 'Detected iPad. Newer iPads can use M-series chips; choose an M profile if applicable.'
+  }
+  if (ua.includes('macintosh') || ua.includes('mac os')) {
+    return 'Detected Mac. Browser APIs usually hide exact chip generation; choose your M-series profile manually.'
+  }
+  return null
+}
+
 const getFamilyName = (model: ModelDatabaseEntry) => model.family || model.name
 
 const getFamilyKey = (model: ModelDatabaseEntry) =>
@@ -206,7 +350,7 @@ const getModelId = (model: ModelDatabaseEntry) =>
 
 const getCompatibilitySummary = (
   model: ModelDatabaseEntry,
-  hardware: SystemHardware,
+  systemRamGb: number | null,
 ): CompatibilityStatus => {
   const keys = QUANT_ORDER.filter(
     (key) => typeof model.ram_requirements_gb[key] === 'number',
@@ -218,7 +362,7 @@ const getCompatibilitySummary = (
 
   for (const key of keys) {
     const requirement = model.ram_requirements_gb[key]
-    const status = getCompatibilityStatus(hardware.ramGb, requirement)
+    const status = getCompatibilityStatus(systemRamGb, requirement)
     if (status === 'Can Run') return 'Can Run'
     if (status === 'Maybe') hasMaybe = true
     if (status === 'Cannot Run') hasCannot = true
@@ -322,6 +466,7 @@ function App() {
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [providerFilter, setProviderFilter] = useState('all')
+  const [selectedCompany, setSelectedCompany] = useState<string | null>(null)
   const [compatibilityFilter, setCompatibilityFilter] =
     useState<CompatibilityFilter>('all')
   const [modalityFilter, setModalityFilter] = useState('all')
@@ -344,6 +489,8 @@ function App() {
     type: 'idle' | 'loading' | 'success' | 'error'
     message?: string
   }>({ type: 'idle' })
+  const [ramOverrideGb, setRamOverrideGb] = useState('')
+  const [chipOverrideId, setChipOverrideId] = useState('')
   const deferredSearchQuery = useDeferredValue(searchQuery)
 
   useEffect(() => {
@@ -387,13 +534,43 @@ function App() {
     [models, userAddedModels],
   )
 
+  const effectiveRamGb = useMemo(() => {
+    if (!ramOverrideGb) return hardware.ramGb
+    const parsed = Number.parseFloat(ramOverrideGb)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : hardware.ramGb
+  }, [hardware.ramGb, ramOverrideGb])
+
+  const effectiveHardware = useMemo<SystemHardware>(
+    () => ({
+      ...hardware,
+      ramGb: effectiveRamGb,
+    }),
+    [effectiveRamGb, hardware],
+  )
+  const selectedChipProfile = useMemo(
+    () => (chipOverrideId ? CHIP_PROFILE_BY_ID[chipOverrideId] || null : null),
+    [chipOverrideId],
+  )
+  const appleDeviceHint = useMemo(
+    () => getAppleDeviceHint(hardware.userAgent),
+    [hardware.userAgent],
+  )
+
+  const ramSourceLabel =
+    ramOverrideGb !== ''
+      ? 'Manual override'
+      : hardware.ramGb === null
+        ? 'Not reported by this browser'
+        : 'Device memory API'
+  const needsHardwareOverride = hardware.ramGb === null
+
   const compatibilityById = useMemo(() => {
     const map = new Map<string, CompatibilityStatus>()
     for (const model of allModels) {
-      map.set(getModelId(model), getCompatibilitySummary(model, hardware))
+      map.set(getModelId(model), getCompatibilitySummary(model, effectiveRamGb))
     }
     return map
-  }, [hardware, allModels])
+  }, [effectiveRamGb, allModels])
 
   const providerOptions = useMemo(() => {
     const providerSet = new Set(allModels.map((model) => model.provider || 'Other'))
@@ -425,18 +602,16 @@ function App() {
   const normalizedSearchQuery = deferredSearchQuery.trim().toLowerCase()
   const hasManualFilters =
     normalizedSearchQuery.length > 0 ||
-    providerFilter !== 'all' ||
+    selectedCompany !== null ||
     compatibilityFilter !== 'all' ||
     modalityFilter !== 'all'
 
-  const filteredModels = useMemo(() => {
+  const companyFilteredModels = useMemo(() => {
     return allModels.filter((model) => {
       const summary = compatibilityById.get(getModelId(model)) || 'Unknown'
       const searchMatches =
         !normalizedSearchQuery ||
         getSearchableText(model).includes(normalizedSearchQuery)
-      const providerMatches =
-        providerFilter === 'all' || (model.provider || 'Other') === providerFilter
       const compatibilityMatches = matchesCompatibilityFilter(
         summary,
         compatibilityFilter,
@@ -445,21 +620,71 @@ function App() {
         modalityFilter === 'all' ||
         (model.modalities || ['Text']).includes(modalityFilter)
 
-      return (
-        searchMatches &&
-        providerMatches &&
-        compatibilityMatches &&
-        modalityMatches
-      )
+      return searchMatches && compatibilityMatches && modalityMatches
     })
   }, [
+    allModels,
     compatibilityById,
     compatibilityFilter,
     modalityFilter,
-    allModels,
     normalizedSearchQuery,
+  ])
+
+  const filteredModels = useMemo(() => {
+    return companyFilteredModels.filter((model) => {
+      const summary = compatibilityById.get(getModelId(model)) || 'Unknown'
+      const providerMatches =
+        providerFilter === 'all' || (model.provider || 'Other') === providerFilter
+      return providerMatches && matchesCompatibilityFilter(summary, compatibilityFilter)
+    })
+  }, [
+    companyFilteredModels,
+    compatibilityById,
+    compatibilityFilter,
     providerFilter,
   ])
+
+  const companySummaries = useMemo(() => {
+    const grouped = new Map<string, ModelDatabaseEntry[]>()
+    for (const model of companyFilteredModels) {
+      const provider = model.provider || 'Other'
+      const list = grouped.get(provider) || []
+      list.push(model)
+      grouped.set(provider, list)
+    }
+
+    const providers = providerOptions.filter((provider) => grouped.has(provider))
+
+    return providers.map((provider) => {
+      const list = grouped.get(provider) || []
+      let canRun = 0
+      let maybe = 0
+      let cannot = 0
+      for (const model of list) {
+        const status = compatibilityById.get(getModelId(model)) || 'Unknown'
+        if (status === 'Can Run') canRun += 1
+        else if (status === 'Maybe') maybe += 1
+        else if (status === 'Cannot Run') cannot += 1
+      }
+
+      const tone = canRun > 0
+        ? 'can-run'
+        : maybe > 0
+          ? 'maybe'
+          : cannot > 0
+            ? 'cannot-run'
+            : 'unknown'
+
+      return {
+        provider,
+        total: list.length,
+        canRun,
+        maybe,
+        cannot,
+        tone,
+      }
+    })
+  }, [companyFilteredModels, compatibilityById, providerOptions])
 
   const modelGroups = useMemo<ProviderGroup[]>(() => {
     const providerMap = new Map<string, Map<string, ModelDatabaseEntry[]>>()
@@ -691,7 +916,7 @@ function App() {
   }
 
   const readiness = useMemo(() => {
-    const memory = hardware.ramGb
+    const memory = effectiveRamGb
     if (memory === null) {
       return {
         label: 'Unknown',
@@ -729,7 +954,7 @@ function App() {
       detail: 'Small models only.',
       tone: 'unlikely',
     }
-  }, [hardware.ramGb])
+  }, [effectiveRamGb])
 
   const readinessStyles: Record<string, string> = {
     great: 'bg-emerald-100 text-emerald-700 border border-emerald-200',
@@ -762,7 +987,7 @@ function App() {
       const rawRequirement = selectedModel.ram_requirements_gb[key]
       const requirement =
         typeof rawRequirement === 'number' ? rawRequirement : null
-      const status = getCompatibilityStatus(hardware.ramGb, requirement)
+      const status = getCompatibilityStatus(effectiveRamGb, requirement)
       const recommendation = getRecommendation(status)
       return {
         key,
@@ -773,7 +998,7 @@ function App() {
         downloadHint: getQuantDownloadHint(key),
       }
     })
-  }, [hardware.ramGb, selectedModel])
+  }, [effectiveRamGb, selectedModel])
 
   const recommendedQuant = useMemo(() => {
     if (!selectedModel) return null
@@ -782,32 +1007,49 @@ function App() {
     )
     for (const key of keys) {
       const requirement = selectedModel.ram_requirements_gb[key]
-      const status = getCompatibilityStatus(hardware.ramGb, requirement)
+      const status = getCompatibilityStatus(effectiveRamGb, requirement)
       if (status === 'Can Run') return key
     }
     for (const key of keys) {
       const requirement = selectedModel.ram_requirements_gb[key]
-      const status = getCompatibilityStatus(hardware.ramGb, requirement)
+      const status = getCompatibilityStatus(effectiveRamGb, requirement)
       if (status === 'Maybe') return key
     }
     return null
-  }, [hardware.ramGb, selectedModel])
+  }, [effectiveRamGb, selectedModel])
 
   const selectedParamCount = selectedModel
     ? parseParamCount(selectedModel.parameter_count)
     : null
   const selectedTokens = selectedModel
-    ? estimateTokensPerSec(selectedParamCount, hardware)
+    ? applyChipPerformanceFactor(
+        estimateTokensPerSec(selectedParamCount, effectiveHardware),
+        selectedChipProfile,
+      )
     : null
   const selectedSummary = selectedModel
     ? compatibilityById.get(getModelId(selectedModel)) || 'Unknown'
     : 'Unknown'
+  const libraryResultCount = selectedCompany
+    ? filteredModels.length
+    : companySummaries.length
 
   const clearFilters = () => {
     setSearchQuery('')
+    setSelectedCompany(null)
     setProviderFilter('all')
     setCompatibilityFilter('all')
     setModalityFilter('all')
+  }
+
+  const handleSelectCompany = (provider: string) => {
+    setSelectedCompany(provider)
+    setProviderFilter(provider)
+  }
+
+  const handleBackToCompanies = () => {
+    setSelectedCompany(null)
+    setProviderFilter('all')
   }
 
   const fetchAndAddModel = async () => {
@@ -913,6 +1155,15 @@ function App() {
     setUserAddedModels((prev) => prev.filter((m) => getModelId(m) !== id))
   }
 
+  const handleChipOverrideChange = (nextChipId: string) => {
+    setChipOverrideId(nextChipId)
+    if (!nextChipId) return
+    const profile = CHIP_PROFILE_BY_ID[nextChipId]
+    if (profile) {
+      setRamOverrideGb(String(profile.recommendedRamGb))
+    }
+  }
+
   return (
     <div className="app-shell">
       <div className="app-container mx-auto max-w-[90rem] px-4 py-8 sm:px-6 lg:px-8 lg:py-14">
@@ -923,20 +1174,30 @@ function App() {
               <span className="chip">No uploads</span>
               <span className="chip">Open-source only</span>
             </div>
-            <button
-              type="button"
-              className="theme-toggle"
-              onClick={() =>
-                setTheme((current) => (current === 'light' ? 'dark' : 'light'))
-              }
-            >
-              <span className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">
-                Theme
-              </span>
-              <span className="theme-pill">
-                {theme === 'light' ? 'Light' : 'Dark'}
-              </span>
-            </button>
+            <div className="header-actions">
+              <a
+                className="github-link"
+                href="https://github.com/gptvibe/AI-Hardware-Check"
+                target="_blank"
+                rel="noreferrer"
+              >
+                GitHub
+              </a>
+              <button
+                type="button"
+                className="theme-toggle"
+                onClick={() =>
+                  setTheme((current) => (current === 'light' ? 'dark' : 'light'))
+                }
+              >
+                <span className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">
+                  Theme
+                </span>
+                <span className="theme-pill">
+                  {theme === 'light' ? 'Light' : 'Dark'}
+                </span>
+              </button>
+            </div>
           </div>
           <div className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
             <div>
@@ -980,6 +1241,37 @@ function App() {
               {addModelStatus.type !== 'idle' && addModelStatus.message ? (
                 <div className={`add-model-status add-model-status--${addModelStatus.type}`}>
                   {addModelStatus.message}
+                </div>
+              ) : null}
+              {needsHardwareOverride ? (
+                <div className="override-inline-bar mt-3">
+                  <span className="text-xs text-[color:var(--muted)]">
+                    Hardware details are limited in this browser.
+                  </span>
+                  <select
+                    className="toolbar-select override-inline-select"
+                    value={chipOverrideId}
+                    onChange={(event) => handleChipOverrideChange(event.target.value)}
+                  >
+                    <option value="">Select device profile</option>
+                    {CHIP_PROFILES.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {profile.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    className="toolbar-select override-inline-select"
+                    value={ramOverrideGb}
+                    onChange={(event) => setRamOverrideGb(event.target.value)}
+                  >
+                    <option value="">RAM auto</option>
+                    {RAM_OVERRIDE_OPTIONS.map((ram) => (
+                      <option key={ram} value={String(ram)}>
+                        {ram} GB RAM
+                      </option>
+                    ))}
+                  </select>
                 </div>
               ) : null}
             </div>
@@ -1034,7 +1326,7 @@ function App() {
           </div>
         </header>
 
-        <main className="mt-10 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(360px,430px)] xl:grid-cols-[minmax(0,1fr)_minmax(430px,520px)]">
+        <main className="mt-10 grid gap-8">
           <div className="space-y-8">
             <section className="card p-6 reveal delay-1">
               <div className="flex flex-wrap items-start justify-between gap-4">
@@ -1058,21 +1350,6 @@ function App() {
                     onChange={(event) => setSearchQuery(event.target.value)}
                     placeholder="Search by model, family, provider, quant, or repo"
                   />
-                </label>
-                <label className="filter-field">
-                  <span className="toolbar-label">Provider</span>
-                  <select
-                    className="toolbar-select"
-                    value={providerFilter}
-                    onChange={(event) => setProviderFilter(event.target.value)}
-                  >
-                    <option value="all">All providers</option>
-                    {providerOptions.map((provider) => (
-                      <option key={provider} value={provider}>
-                        {provider}
-                      </option>
-                    ))}
-                  </select>
                 </label>
                 <label className="filter-field">
                   <span className="toolbar-label">Compatibility</span>
@@ -1111,175 +1388,225 @@ function App() {
                 </label>
                 <div className="toolbar-actions">
                   <span className="toolbar-summary">
-                    {filteredModels.length} match
-                    {filteredModels.length === 1 ? '' : 'es'}
+                    {libraryResultCount} {selectedCompany ? 'model' : 'company'}
+                    {libraryResultCount === 1 ? '' : 's'}
+                    {selectedCompany ? ` in ${selectedCompany}` : ' visible'}
                   </span>
-                  <button
-                    type="button"
-                    className="family-toggle"
-                    onClick={clearFilters}
-                    disabled={!hasManualFilters}
-                  >
-                    Clear filters
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {selectedCompany ? (
+                      <button
+                        type="button"
+                        className="family-toggle"
+                        onClick={handleBackToCompanies}
+                      >
+                        Back to companies
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="family-toggle"
+                      onClick={clearFilters}
+                      disabled={!hasManualFilters}
+                    >
+                      Clear filters
+                    </button>
+                  </div>
                 </div>
               </div>
               {modelsError ? (
                 <div className="empty-state mt-6">{modelsError}</div>
-              ) : filteredModels.length === 0 ? (
+              ) : companySummaries.length === 0 ? (
                 <div className="empty-state mt-6">
-                  No models match the current search and filters.
+                  No companies match the current search and filters.
                 </div>
               ) : (
                 <div className="mt-6 space-y-6">
-                  {modelGroups.map((provider) => (
-                    <div key={provider.name} className="provider-section">
-                      <div className="flex items-center justify-between gap-4">
-                        <h3 className="provider-title">{provider.name}</h3>
-                        <span className="provider-count">
-                          {provider.totalModels} models ·{' '}
-                          {provider.families.length} families
-                        </span>
+                  <div className="company-grid">
+                    {companySummaries.map((company) => (
+                      <button
+                        key={company.provider}
+                        type="button"
+                        className={`company-card tone-${company.tone} ${selectedCompany === company.provider ? 'active' : ''}`}
+                        onClick={() => handleSelectCompany(company.provider)}
+                      >
+                        <div className="company-card-head">
+                          <span className="company-name">{company.provider}</span>
+                          <span className="company-total">{company.total} models</span>
+                        </div>
+                        <div className="company-status-row">
+                          <span>Can Run: {company.canRun}</span>
+                          <span>Maybe: {company.maybe}</span>
+                          <span>Cannot: {company.cannot}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {selectedCompany ? (
+                    filteredModels.length === 0 ? (
+                      <div className="empty-state">
+                        No models from {selectedCompany} match current filters.
                       </div>
-                      {provider.families.length === 0 ? (
-                        <div className="empty-state">
-                          Add models in public/models.json.
-                        </div>
-                      ) : (
-                        <div className="mt-4 space-y-4">
-                          {provider.families.map((family) => {
-                            const familyKey = `${provider.name}::${family.name}`
-                            const visibleModels = family.models.filter(
-                              (model) =>
-                                (compatibilityById.get(getModelId(model)) ||
-                                  'Unknown') !== 'Cannot Run',
-                            )
-                            const hiddenModels = family.models.filter(
-                              (model) =>
-                                (compatibilityById.get(getModelId(model)) ||
-                                  'Unknown') === 'Cannot Run',
-                            )
-                            const showAll = expandedFamilies.has(familyKey)
-                            const modelsToShow = hasManualFilters
-                              ? family.models
-                              : showAll
-                                ? family.models
-                                : visibleModels
-
-                            return (
-                              <div key={familyKey} className="family-block">
-                                <div className="family-header">
-                                  <div>
-                                    <div className="family-title">
-                                      {family.name}
-                                    </div>
-                                    <div className="family-meta">
-                                      Sizes: {family.sizes.join(', ')}
-                                    </div>
-                                  </div>
-                                  <div className="family-actions">
-                                    <span className="family-count">
-                                      {modelsToShow.length} shown
-                                    </span>
-                                    {hiddenModels.length > 0 && !hasManualFilters ? (
-                                      <button
-                                        type="button"
-                                        className="family-toggle"
-                                        onClick={() => toggleFamily(familyKey)}
-                                      >
-                                        {showAll
-                                          ? 'Hide unavailable'
-                                          : `Show unavailable (${hiddenModels.length})`}
-                                      </button>
-                                    ) : null}
-                                  </div>
-                                </div>
-                                {modelsToShow.length === 0 ? (
-                                  <div className="empty-state">
-                                    No sizes fit this system. Show unavailable
-                                    to view the full family.
-                                  </div>
-                                ) : (
-                                  <div className="model-grid">
-                                    {modelsToShow.map((model) => {
-                                      const id = getModelId(model)
-                                      const isActive = selectedModelId === id
-                                      const paramsB = parseParamCount(
-                                        model.parameter_count,
-                                      )
-                                      const tokens = estimateTokensPerSec(
-                                        paramsB,
-                                        hardware,
-                                      )
-                                      const summary =
-                                        compatibilityById.get(id) || 'Unknown'
-                                      const unavailable =
-                                        summary === 'Cannot Run'
-
-                                      return (
-                                        <button
-                                          key={id}
-                                          type="button"
-                                          className={`model-card ${isActive ? 'active' : ''} ${unavailable ? 'unavailable' : ''}`}
-                                          onClick={() =>
-                                            setSelectedModelId(id)
-                                          }
-                                        >
-                                          <div className="flex items-start justify-between gap-3">
-                                            <div>
-                                              <div className="model-name">
-                                                {model.name}
-                                                {model.userAdded ? (
-                                                  <span className="user-badge ml-1.5">Custom</span>
-                                                ) : null}
-                                              </div>
-                                              <div className="model-meta">
-                                        <span className="mono">
-                                          {model.parameter_count}
-                                        </span>
-                                        {(model.modalities || ['Text']).map(
-                                          (modality) => (
-                                            <span
-                                              key={`${id}-${modality}`}
-                                              className="chip chip-compact"
-                                            >
-                                              {modality}
-                                            </span>
-                                          ),
-                                        )}
-                                      </div>
-                                    </div>
-                                            <span
-                                              className={`status-pill ${compatibilityStyles[summary]}`}
-                                            >
-                                              {summary}
-                                            </span>
-                                          </div>
-                                          <div className="model-stats">
-                                            <span className="text-xs text-[color:var(--muted)]">
-                                              Est. speed
-                                            </span>
-                                            <span className="mono">
-                                              {formatTokensPerSec(tokens)}
-                                            </span>
-                                          </div>
-                                          {model.notes ? (
-                                            <div className="model-notes">
-                                              {model.notes}
-                                            </div>
-                                          ) : null}
-                                        </button>
-                                      )
-                                    })}
-                                  </div>
-                                )}
+                    ) : (
+                      <div className="space-y-6">
+                        {modelGroups.map((provider) => (
+                          <div key={provider.name} className="provider-section">
+                            <div className="flex items-center justify-between gap-4">
+                              <h3 className="provider-title">{provider.name}</h3>
+                              <span className="provider-count">
+                                {provider.totalModels} models ·{' '}
+                                {provider.families.length} families
+                              </span>
+                            </div>
+                            {provider.families.length === 0 ? (
+                              <div className="empty-state">
+                                Add models in public/models.json.
                               </div>
-                            )
-                          })}
-                        </div>
-                      )}
+                            ) : (
+                              <div className="mt-4 space-y-4">
+                                {provider.families.map((family) => {
+                                  const familyKey = `${provider.name}::${family.name}`
+                                  const visibleModels = family.models.filter(
+                                    (model) =>
+                                      (compatibilityById.get(getModelId(model)) ||
+                                        'Unknown') !== 'Cannot Run',
+                                  )
+                                  const hiddenModels = family.models.filter(
+                                    (model) =>
+                                      (compatibilityById.get(getModelId(model)) ||
+                                        'Unknown') === 'Cannot Run',
+                                  )
+                                  const showAll = expandedFamilies.has(familyKey)
+                                  const modelsToShow = hasManualFilters
+                                    ? family.models
+                                    : showAll
+                                      ? family.models
+                                      : visibleModels
+
+                                  return (
+                                    <div key={familyKey} className="family-block">
+                                      <div className="family-header">
+                                        <div>
+                                          <div className="family-title">
+                                            {family.name}
+                                          </div>
+                                          <div className="family-meta">
+                                            Sizes: {family.sizes.join(', ')}
+                                          </div>
+                                        </div>
+                                        <div className="family-actions">
+                                          <span className="family-count">
+                                            {modelsToShow.length} shown
+                                          </span>
+                                          {hiddenModels.length > 0 && !hasManualFilters ? (
+                                            <button
+                                              type="button"
+                                              className="family-toggle"
+                                              onClick={() => toggleFamily(familyKey)}
+                                            >
+                                              {showAll
+                                                ? 'Hide unavailable'
+                                                : `Show unavailable (${hiddenModels.length})`}
+                                            </button>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                      {modelsToShow.length === 0 ? (
+                                        <div className="empty-state">
+                                          No sizes fit this system. Show unavailable
+                                          to view the full family.
+                                        </div>
+                                      ) : (
+                                        <div className="model-grid">
+                                          {modelsToShow.map((model) => {
+                                            const id = getModelId(model)
+                                            const isActive = selectedModelId === id
+                                            const paramsB = parseParamCount(
+                                              model.parameter_count,
+                                            )
+                                            const tokens = applyChipPerformanceFactor(
+                                              estimateTokensPerSec(
+                                                paramsB,
+                                                effectiveHardware,
+                                              ),
+                                              selectedChipProfile,
+                                            )
+                                            const summary =
+                                              compatibilityById.get(id) || 'Unknown'
+                                            const unavailable =
+                                              summary === 'Cannot Run'
+
+                                            return (
+                                              <button
+                                                key={id}
+                                                type="button"
+                                                className={`model-card ${isActive ? 'active' : ''} ${unavailable ? 'unavailable' : ''}`}
+                                                onClick={() =>
+                                                  setSelectedModelId(id)
+                                                }
+                                              >
+                                                <div className="flex items-start justify-between gap-3">
+                                                  <div>
+                                                    <div className="model-name">
+                                                      {model.name}
+                                                      {model.userAdded ? (
+                                                        <span className="user-badge ml-1.5">Custom</span>
+                                                      ) : null}
+                                                    </div>
+                                                    <div className="model-meta">
+                                              <span className="mono">
+                                                {model.parameter_count}
+                                              </span>
+                                              {(model.modalities || ['Text']).map(
+                                                (modality) => (
+                                                  <span
+                                                    key={`${id}-${modality}`}
+                                                    className="chip chip-compact"
+                                                  >
+                                                    {modality}
+                                                  </span>
+                                                ),
+                                              )}
+                                            </div>
+                                          </div>
+                                                  <span
+                                                    className={`status-pill ${compatibilityStyles[summary]}`}
+                                                  >
+                                                    {summary}
+                                                  </span>
+                                                </div>
+                                                <div className="model-stats">
+                                                  <span className="text-xs text-[color:var(--muted)]">
+                                                    Est. speed
+                                                  </span>
+                                                  <span className="mono">
+                                                    {formatTokensPerSec(tokens)}
+                                                  </span>
+                                                </div>
+                                                {model.notes ? (
+                                                  <div className="model-notes">
+                                                    {model.notes}
+                                                  </div>
+                                                ) : null}
+                                              </button>
+                                            )
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  ) : (
+                    <div className="empty-state">
+                      Select a company card to view all its model families.
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
             </section>
@@ -1314,11 +1641,21 @@ function App() {
                     System RAM
                   </div>
                   <div className="text-2xl font-semibold">
-                    {formatRam(hardware.ramGb)}
+                    {formatRam(effectiveRamGb)}
                   </div>
                   <div className="text-xs text-[color:var(--muted)]">
-                    Device memory API
+                    {ramSourceLabel}
                   </div>
+                  {selectedChipProfile ? (
+                    <p className="mt-2 text-xs text-[color:var(--muted)]">
+                      {selectedChipProfile.note} RAM preset: {selectedChipProfile.recommendedRamGb} GB.
+                    </p>
+                  ) : null}
+                  {!selectedChipProfile && appleDeviceHint ? (
+                    <p className="mt-2 text-xs text-[color:var(--muted)]">
+                      {appleDeviceHint}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="stat">
                   <div className="text-[11px] uppercase text-[color:var(--muted)]">
@@ -1370,7 +1707,7 @@ function App() {
 
           </div>
 
-          <aside className="detail-panel card card-strong p-5 sm:p-6 reveal delay-3 xl:sticky xl:top-8 h-fit">
+          <aside className="detail-panel card card-strong p-5 sm:p-6 reveal delay-3">
             {selectedModel ? (
               <>
                 <div className="flex flex-wrap items-start justify-between gap-4">
