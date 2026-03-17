@@ -1,5 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import {
+  getCompatibilityDetail,
   getCompatibilityStatus,
   loadModelDatabase,
   normalizeModelEntry,
@@ -8,12 +9,15 @@ import {
   type ModelDatabaseEntry,
 } from './lib/compatibility'
 import {
-  detectGpu,
-  getDefaultGpuInfo,
-  getSystemHardware,
-  type GpuInfo,
-  type SystemHardware,
+  getHardwareProfile,
+  type HardwareProfile,
 } from './lib/systemHardware'
+import {
+  estimatePerformanceRange,
+  formatSpeedRange,
+  runLocalCalibrationBenchmark,
+  type LocalBenchmarkResult,
+} from './lib/performanceEstimator'
 
 type QuantLevel = {
   key: 'fp16' | 'int8' | 'int4'
@@ -50,6 +54,9 @@ type CompatibilityFilter =
   | 'maybe'
   | 'cannot-run'
   | 'unknown'
+type RuntimeId = 'ollama' | 'lmstudio' | 'llamacpp'
+
+const OLLAMA_INSTALL_COMMAND = 'winget install -e --id Ollama.Ollama'
 
 const quantizationLevels: QuantLevel[] = [
   {
@@ -100,6 +107,7 @@ const RECOMMEND_ORDER = [
 ]
 
 const THEME_KEY = 'aihc-theme'
+const PERF_CALIBRATION_KEY = 'aihc-perf-calibration'
 const MODALITY_ORDER = ['Text', 'Image', 'Audio', 'Video']
 const DIRECT_DOWNLOAD_FORMATS = new Set(['FP16', 'BF16', 'FP8', 'Safetensors'])
 const RAM_OVERRIDE_OPTIONS = [
@@ -297,33 +305,13 @@ const parseReleaseDate = (value?: string): number | null => {
   return timestamp
 }
 
-const estimateTokensPerSec = (
-  paramsB: number | null,
-  hardware: SystemHardware,
-): number | null => {
-  if (!paramsB) return null
-  const base = hardware.webgpu ? 22 : 11
-  const sizeFactor = 7 / paramsB
-  const ramFactor =
-    hardware.ramGb === null ? 0.8 : Math.min(1.6, Math.sqrt(hardware.ramGb / 16))
-  const cpuFactor =
-    hardware.cpuCores === null
-      ? 0.9
-      : Math.min(1.4, Math.sqrt(hardware.cpuCores / 8))
-  const raw = base * sizeFactor * ramFactor * cpuFactor
-  return Math.min(80, Math.max(0.2, raw))
-}
+const formatPerfLatency = (value: number | null) =>
+  value === null ? '--' : `~${(value / 1000).toFixed(1)}s first token`
 
-const formatTokensPerSec = (value: number | null) =>
-  value === null ? '--' : `~${value.toFixed(1)} tok/s`
-
-const applyChipPerformanceFactor = (
-  value: number | null,
-  profile: ChipProfile | null,
-): number | null => {
-  if (value === null || !profile) return value
-  const adjusted = value * profile.speedMultiplier
-  return Math.min(120, Math.max(0.2, adjusted))
+const getConfidenceLabel = (score: number) => {
+  if (score >= 80) return 'High confidence'
+  if (score >= 60) return 'Medium confidence'
+  return 'Low confidence'
 }
 
 const getAppleDeviceHint = (userAgent: string): string | null => {
@@ -447,6 +435,48 @@ const getRecommendation = (
   }
 }
 
+const fillTemplate = (
+  template: string,
+  values: Record<string, string>,
+) => template.replace(/\{([a-zA-Z0-9_]+)\}/g, (_, key: string) => values[key] || '')
+
+const getRuntimeRecipeCommand = (
+  model: ModelDatabaseEntry,
+  runtime: RuntimeId,
+  quant: string | null,
+): string | null => {
+  const repo = model.huggingface_repo
+  if (!repo) return null
+  const slug = getRepoModelSlug(repo)
+  const quantTag = (quant || 'Q4_K_M').toLowerCase()
+  const template = model.runtime_recipe_templates?.[runtime]
+
+  if (template) {
+    const context = String(model.context_windows?.[0] || 4096)
+    return fillTemplate(template, {
+      repo,
+      slug,
+      quant: quant || 'Q4_K_M',
+      quant_tag: quantTag,
+      context,
+    })
+  }
+
+  if (runtime === 'ollama') {
+    return `ollama run hf.co/${repo}:${quantTag}`
+  }
+  if (runtime === 'lmstudio') {
+    return `Download LM Studio app, open it, and search for \"${model.name}\".`
+  }
+  return `llama-cli -hf ${repo} -ngl 999 -c ${model.context_windows?.[0] || 4096}`
+}
+
+const getRuntimeDownloadUrl = (runtime: RuntimeId): string | null => {
+  if (runtime === 'ollama') return 'https://ollama.com/download'
+  if (runtime === 'lmstudio') return 'https://lmstudio.ai/'
+  return null
+}
+
 const getInitialTheme = (): 'light' | 'dark' => {
   if (typeof window === 'undefined') return 'light'
   const stored = window.localStorage.getItem(THEME_KEY)
@@ -458,11 +488,13 @@ const getInitialTheme = (): 'light' | 'dark' => {
 
 function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => getInitialTheme())
-  const [gpuInfo, setGpuInfo] = useState<GpuInfo>(() => getDefaultGpuInfo())
-  const hardware = useMemo<SystemHardware>(() => getSystemHardware(), [])
+  const [hardwareProfile, setHardwareProfile] = useState<HardwareProfile>(() =>
+    getHardwareProfile(),
+  )
   const [models, setModels] = useState<ModelDatabaseEntry[]>([])
   const [modelsError, setModelsError] = useState<string | null>(null)
   const [copiedRepo, setCopiedRepo] = useState<string | null>(null)
+  const [copiedCommand, setCopiedCommand] = useState<string | null>(null)
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [providerFilter, setProviderFilter] = useState('all')
@@ -491,6 +523,27 @@ function App() {
   }>({ type: 'idle' })
   const [ramOverrideGb, setRamOverrideGb] = useState('')
   const [chipOverrideId, setChipOverrideId] = useState('')
+  const [benchmarkState, setBenchmarkState] = useState<{
+    running: boolean
+    result: LocalBenchmarkResult | null
+    error: string | null
+  }>(() => {
+    try {
+      const stored = window.localStorage.getItem(PERF_CALIBRATION_KEY)
+      if (!stored) return { running: false, result: null, error: null }
+      const parsed = JSON.parse(stored) as LocalBenchmarkResult
+      if (
+        typeof parsed?.suggestedMultiplier === 'number' &&
+        typeof parsed?.scoreOpsPerSec === 'number' &&
+        typeof parsed?.completedAtIso === 'string'
+      ) {
+        return { running: false, result: parsed, error: null }
+      }
+      return { running: false, result: null, error: null }
+    } catch {
+      return { running: false, result: null, error: null }
+    }
+  })
   const deferredSearchQuery = useDeferredValue(searchQuery)
 
   useEffect(() => {
@@ -519,7 +572,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    setGpuInfo(detectGpu())
+    setHardwareProfile(getHardwareProfile())
   }, [])
 
   // Persist user-added models to localStorage
@@ -529,40 +582,66 @@ function App() {
     } catch { /* quota exceeded or unavailable */ }
   }, [userAddedModels])
 
+  useEffect(() => {
+    if (!benchmarkState.result) return
+    try {
+      window.localStorage.setItem(
+        PERF_CALIBRATION_KEY,
+        JSON.stringify(benchmarkState.result),
+      )
+    } catch {
+      // Ignore persistence failures.
+    }
+  }, [benchmarkState.result])
+
   const allModels = useMemo(
     () => [...models, ...userAddedModels],
     [models, userAddedModels],
   )
 
   const effectiveRamGb = useMemo(() => {
-    if (!ramOverrideGb) return hardware.ramGb
+    if (!ramOverrideGb) return hardwareProfile.ramGb.value
     const parsed = Number.parseFloat(ramOverrideGb)
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : hardware.ramGb
-  }, [hardware.ramGb, ramOverrideGb])
+    return Number.isFinite(parsed) && parsed > 0
+      ? parsed
+      : hardwareProfile.ramGb.value
+  }, [hardwareProfile.ramGb.value, ramOverrideGb])
 
-  const effectiveHardware = useMemo<SystemHardware>(
+  const effectiveHardwareProfile = useMemo<HardwareProfile>(
     () => ({
-      ...hardware,
-      ramGb: effectiveRamGb,
+      ...hardwareProfile,
+      system: {
+        ...hardwareProfile.system,
+        ramGb: effectiveRamGb,
+      },
+      ramGb: {
+        ...hardwareProfile.ramGb,
+        value: effectiveRamGb,
+        source: ramOverrideGb !== '' ? 'inferred' : hardwareProfile.ramGb.source,
+        confidence: ramOverrideGb !== '' ? 'medium' : hardwareProfile.ramGb.confidence,
+        note: ramOverrideGb !== ''
+          ? 'RAM set manually by user override.'
+          : hardwareProfile.ramGb.note,
+      },
     }),
-    [effectiveRamGb, hardware],
+    [effectiveRamGb, hardwareProfile, ramOverrideGb],
   )
   const selectedChipProfile = useMemo(
     () => (chipOverrideId ? CHIP_PROFILE_BY_ID[chipOverrideId] || null : null),
     [chipOverrideId],
   )
   const appleDeviceHint = useMemo(
-    () => getAppleDeviceHint(hardware.userAgent),
-    [hardware.userAgent],
+    () => getAppleDeviceHint(hardwareProfile.system.userAgent),
+    [hardwareProfile.system.userAgent],
   )
 
   const ramSourceLabel =
     ramOverrideGb !== ''
       ? 'Manual override'
-      : hardware.ramGb === null
+      : hardwareProfile.ramGb.value === null
         ? 'Not reported by this browser'
         : 'Device memory API'
-  const needsHardwareOverride = hardware.ramGb === null
+  const needsHardwareOverride = hardwareProfile.ramGb.value === null
 
   const compatibilityById = useMemo(() => {
     const map = new Map<string, CompatibilityStatus>()
@@ -903,6 +982,38 @@ function App() {
     }
   }
 
+  const handleCopyCommand = (command: string) => {
+    const setCopied = () => {
+      setCopiedCommand(command)
+      window.setTimeout(() => {
+        setCopiedCommand((current) => (current === command ? null : current))
+      }, 1500)
+    }
+
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(command).then(setCopied).catch(() => {
+        setCopiedCommand(null)
+      })
+      return
+    }
+
+    setCopiedCommand(null)
+  }
+
+  const runCalibration = async () => {
+    setBenchmarkState((current) => ({ ...current, running: true, error: null }))
+    try {
+      const result = await runLocalCalibrationBenchmark()
+      setBenchmarkState({ running: false, result, error: null })
+    } catch {
+      setBenchmarkState({
+        running: false,
+        result: null,
+        error: 'Calibration benchmark failed on this browser.',
+      })
+    }
+  }
+
   const toggleFamily = (key: string) => {
     setExpandedFamilies((current) => {
       const next = new Set(current)
@@ -987,12 +1098,14 @@ function App() {
       const rawRequirement = selectedModel.ram_requirements_gb[key]
       const requirement =
         typeof rawRequirement === 'number' ? rawRequirement : null
-      const status = getCompatibilityStatus(effectiveRamGb, requirement)
+      const detail = getCompatibilityDetail(effectiveRamGb, requirement)
+      const status = detail.status
       const recommendation = getRecommendation(status)
       return {
         key,
         requirement,
         status,
+        detail,
         recommendation,
         downloadUrl: getQuantDownloadUrl(selectedModel, key),
         downloadHint: getQuantDownloadHint(key),
@@ -1019,20 +1132,79 @@ function App() {
   }, [effectiveRamGb, selectedModel])
 
   const selectedParamCount = selectedModel
-    ? parseParamCount(selectedModel.parameter_count)
+    ? selectedModel.active_params_b ?? parseParamCount(selectedModel.parameter_count)
     : null
-  const selectedTokens = selectedModel
-    ? applyChipPerformanceFactor(
-        estimateTokensPerSec(selectedParamCount, effectiveHardware),
-        selectedChipProfile,
-      )
-    : null
+  const calibrationMultiplier = benchmarkState.result?.suggestedMultiplier || 1
+  const selectedContextTokens = selectedModel?.context_windows?.[0] || 4096
+  const selectedPerformance = selectedModel
+    ? estimatePerformanceRange({
+        paramsB: selectedParamCount,
+        quant: recommendedQuant,
+        contextTokens: selectedContextTokens,
+        profile: effectiveHardwareProfile,
+        chipMultiplier: selectedChipProfile?.speedMultiplier || 1,
+        calibrationMultiplier,
+      })
+    : {
+        expectedTokPerSec: null,
+        conservativeTokPerSec: null,
+        firstTokenLatencyMs: null,
+        confidence: 'low' as const,
+        explanation: 'No model selected.',
+      }
   const selectedSummary = selectedModel
     ? compatibilityById.get(getModelId(selectedModel)) || 'Unknown'
     : 'Unknown'
   const libraryResultCount = selectedCompany
     ? filteredModels.length
     : companySummaries.length
+
+  const guidedRecommendation = useMemo(() => {
+    const topRunnableModel = runnableModelList.preview[0]?.model || null
+    const candidates = filteredModels.filter((model) => {
+      const status = compatibilityById.get(getModelId(model)) || 'Unknown'
+      if (status === 'Cannot Run') return false
+      return true
+    })
+
+    const ranked = [...candidates].sort((a, b) => {
+      const aStatus = compatibilityById.get(getModelId(a)) || 'Unknown'
+      const bStatus = compatibilityById.get(getModelId(b)) || 'Unknown'
+      const rank = (status: CompatibilityStatus) =>
+        status === 'Can Run' ? 0 : status === 'Maybe' ? 1 : 2
+      const statusDelta = rank(aStatus) - rank(bStatus)
+      if (statusDelta !== 0) return statusDelta
+      const aParams = parseParamCount(a.parameter_count) ?? 9999
+      const bParams = parseParamCount(b.parameter_count) ?? 9999
+      return aParams - bParams
+    })
+
+    const model = topRunnableModel || ranked[0] || null
+    const runtimeRecipes = model
+      ? ([
+          {
+            runtime: 'ollama' as RuntimeId,
+            label: 'Ollama',
+            command: getRuntimeRecipeCommand(model, 'ollama', recommendedQuant),
+          },
+          {
+            runtime: 'lmstudio' as RuntimeId,
+            label: 'LM Studio',
+            command: getRuntimeRecipeCommand(model, 'lmstudio', recommendedQuant),
+          },
+        ]).filter((item) => typeof item.command === 'string' && item.command)
+      : []
+
+    return {
+      model,
+      runtimeRecipes,
+    }
+  }, [
+    compatibilityById,
+    filteredModels,
+    recommendedQuant,
+    runnableModelList.preview,
+  ])
 
   const clearFilters = () => {
     setSearchQuery('')
@@ -1089,6 +1261,7 @@ function App() {
       const data = await response.json() as {
         pipeline_tag?: string
         safetensors?: { total?: number }
+        config?: { max_position_embeddings?: number; n_ctx?: number }
       }
 
       const [org, ...rest] = repoId.split('/')
@@ -1122,6 +1295,16 @@ function App() {
       const modalities =
         (data.pipeline_tag && PIPELINE_TAG_TO_MODALITIES[data.pipeline_tag]) ||
         ['Text']
+      const activeParamsB = typeof totalParams === 'number' && totalParams > 0
+        ? Number((totalParams / 1e9).toFixed(2))
+        : undefined
+      const contextWindow =
+        (typeof data.config?.max_position_embeddings === 'number' &&
+          data.config.max_position_embeddings > 0
+          ? Math.round(data.config.max_position_embeddings)
+          : typeof data.config?.n_ctx === 'number' && data.config.n_ctx > 0
+            ? Math.round(data.config.n_ctx)
+            : 4096)
 
       const entry: ModelDatabaseEntry = {
         name: slug,
@@ -1129,6 +1312,12 @@ function App() {
         family: slug,
         huggingface_repo: repoId,
         parameter_count: parameterCount,
+        active_params_b: activeParamsB,
+        context_windows: [contextWindow],
+        runtime_recipe_templates: {
+          ollama: 'ollama run hf.co/{repo}:{quant_tag}',
+          llamacpp: 'llama-cli -hf {repo} -ngl 999 -c {context}',
+        },
         modalities,
         formats: ['FP16', 'BF16', 'Safetensors'],
         ram_requirements_gb: {},
@@ -1328,89 +1517,216 @@ function App() {
 
         <main className="mt-10 grid gap-8">
           <div className="space-y-8">
-            <section className="card p-6 reveal delay-1">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <h2 className="text-xl font-semibold">Model library</h2>
-                  <p className="mt-1 text-sm text-[color:var(--muted)]">
-                    Pick a model to see quantization fit and recommendations.
-                  </p>
+            <div className="top-dual reveal delay-1">
+              <section className="card p-6">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-xl font-semibold">Model library</h2>
+                    <p className="mt-1 text-sm text-[color:var(--muted)]">
+                      Pick a provider and filter before opening model cards below.
+                    </p>
+                  </div>
+                  <div className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">
+                    Filter first
+                  </div>
                 </div>
-                <div className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">
-                  Small to big
-                </div>
-              </div>
-              <div className="library-toolbar mt-6">
-                <label className="search-field">
-                  <span className="toolbar-label">Search</span>
-                  <input
-                    type="search"
-                    className="toolbar-input"
-                    value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                    placeholder="Search by model, family, provider, quant, or repo"
-                  />
-                </label>
-                <label className="filter-field">
-                  <span className="toolbar-label">Compatibility</span>
-                  <select
-                    className="toolbar-select"
-                    value={compatibilityFilter}
-                    onChange={(event) =>
-                      setCompatibilityFilter(
-                        event.target.value as CompatibilityFilter,
-                      )
-                    }
-                  >
-                    {Object.entries(compatibilityFilterLabels).map(
-                      ([value, label]) => (
-                        <option key={value} value={value}>
-                          {label}
+                <div className="library-toolbar mt-6">
+                  <label className="search-field">
+                    <span className="toolbar-label">Search</span>
+                    <input
+                      type="search"
+                      className="toolbar-input"
+                      value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      placeholder="Search by model, family, provider, quant, or repo"
+                    />
+                  </label>
+                  <label className="filter-field">
+                    <span className="toolbar-label">Compatibility</span>
+                    <select
+                      className="toolbar-select"
+                      value={compatibilityFilter}
+                      onChange={(event) =>
+                        setCompatibilityFilter(
+                          event.target.value as CompatibilityFilter,
+                        )
+                      }
+                    >
+                      {Object.entries(compatibilityFilterLabels).map(
+                        ([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </label>
+                  <label className="filter-field">
+                    <span className="toolbar-label">Modality</span>
+                    <select
+                      className="toolbar-select"
+                      value={modalityFilter}
+                      onChange={(event) => setModalityFilter(event.target.value)}
+                    >
+                      <option value="all">All modalities</option>
+                      {modalityOptions.map((modality) => (
+                        <option key={modality} value={modality}>
+                          {modality}
                         </option>
-                      ),
-                    )}
-                  </select>
-                </label>
-                <label className="filter-field">
-                  <span className="toolbar-label">Modality</span>
-                  <select
-                    className="toolbar-select"
-                    value={modalityFilter}
-                    onChange={(event) => setModalityFilter(event.target.value)}
-                  >
-                    <option value="all">All modalities</option>
-                    {modalityOptions.map((modality) => (
-                      <option key={modality} value={modality}>
-                        {modality}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="toolbar-actions">
-                  <span className="toolbar-summary">
-                    {libraryResultCount} {selectedCompany ? 'model' : 'company'}
-                    {libraryResultCount === 1 ? '' : 's'}
-                    {selectedCompany ? ` in ${selectedCompany}` : ' visible'}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    {selectedCompany ? (
+                      ))}
+                    </select>
+                  </label>
+                  <div className="toolbar-actions">
+                    <span className="toolbar-summary">
+                      {libraryResultCount} {selectedCompany ? 'model' : 'company'}
+                      {libraryResultCount === 1 ? '' : 's'}
+                      {selectedCompany ? ` in ${selectedCompany}` : ' visible'}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {selectedCompany ? (
+                        <button
+                          type="button"
+                          className="family-toggle"
+                          onClick={handleBackToCompanies}
+                        >
+                          Back to companies
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="family-toggle"
-                        onClick={handleBackToCompanies}
+                        onClick={clearFilters}
+                        disabled={!hasManualFilters}
                       >
-                        Back to companies
+                        Clear filters
                       </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="family-toggle"
-                      onClick={clearFilters}
-                      disabled={!hasManualFilters}
-                    >
-                      Clear filters
-                    </button>
+                    </div>
                   </div>
+                </div>
+                {modelsError ? (
+                  <div className="empty-state mt-6">{modelsError}</div>
+                ) : companySummaries.length === 0 ? (
+                  <div className="empty-state mt-6">
+                    No companies match the current search and filters.
+                  </div>
+                ) : (
+                  <div className="mt-6">
+                    <div className="company-grid">
+                      {companySummaries.map((company) => (
+                        <button
+                          key={company.provider}
+                          type="button"
+                          className={`company-card tone-${company.tone} ${selectedCompany === company.provider ? 'active' : ''}`}
+                          onClick={() => handleSelectCompany(company.provider)}
+                        >
+                          <div className="company-card-head">
+                            <span className="company-name">{company.provider}</span>
+                            <span className="company-total">{company.total} models</span>
+                          </div>
+                          <div className="company-status-row">
+                            <span>Can Run: {company.canRun}</span>
+                            <span>Maybe: {company.maybe}</span>
+                            <span>Cannot: {company.cannot}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </section>
+
+              <section className="card p-6">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-semibold">Guided setup</h2>
+                  <p className="mt-1 text-sm text-[color:var(--muted)]">
+                    Recommended quick start with minimal choices.
+                  </p>
+                </div>
+                <span className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">
+                  Ollama + LM Studio only
+                </span>
+              </div>
+              <div className="guided-result mt-5">
+                {guidedRecommendation.model ? (
+                  <>
+                    <div className="mt-2 text-base font-semibold">
+                      Recommended now: {guidedRecommendation.model.name}
+                    </div>
+                    <div className="mt-1 text-sm text-[color:var(--muted)]">
+                      {guidedRecommendation.model.parameter_count} · {(guidedRecommendation.model.modalities || ['Text']).join(', ')}
+                    </div>
+                    {guidedRecommendation.runtimeRecipes.length > 0 ? (
+                      <div className="runtime-recipes mt-4">
+                        {guidedRecommendation.runtimeRecipes.map((recipe) => (
+                          <div key={recipe.runtime} className="runtime-recipe-card">
+                            <div className="runtime-recipe-head">
+                              <span className="runtime-recipe-label">{recipe.label}</span>
+                              <div className="runtime-recipe-actions">
+                                {getRuntimeDownloadUrl(recipe.runtime) ? (
+                                  <a
+                                    className="pill-button"
+                                    href={getRuntimeDownloadUrl(recipe.runtime) || '#'}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    Download here
+                                  </a>
+                                ) : null}
+                                {recipe.runtime === 'ollama' ? (
+                                  <button
+                                    type="button"
+                                    className="pill-button"
+                                    onClick={() => handleCopyCommand(OLLAMA_INSTALL_COMMAND)}
+                                  >
+                                    {copiedCommand === OLLAMA_INSTALL_COMMAND ? 'Copied' : 'Copy install'}
+                                  </button>
+                                ) : null}
+                                {recipe.runtime === 'ollama' ? (
+                                  <button
+                                    type="button"
+                                    className="pill-button"
+                                    onClick={() => handleCopyCommand(recipe.command || '')}
+                                  >
+                                    {copiedCommand === recipe.command ? 'Copied' : 'Copy run'}
+                                  </button>
+                                ) : null}
+                              </div>
+                            </div>
+                            <div className="runtime-recipe-command">
+                              {recipe.runtime === 'ollama' ? (
+                                <>
+                                  <div className="mono">Install: {OLLAMA_INSTALL_COMMAND}</div>
+                                  <div className="mono mt-1">Run: {recipe.command}</div>
+                                </>
+                              ) : (
+                                <div>Download LM Studio, open the app, and search for "{guidedRecommendation.model?.name}".</div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <div className="empty-state mt-3">
+                    No compatible model found for this goal with current filters. Try "General chat" or clear filters.
+                  </div>
+                )}
+              </div>
+              </section>
+            </div>
+
+            <section className="card p-6 reveal delay-1">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-semibold">Model cards</h2>
+                  <p className="mt-1 text-sm text-[color:var(--muted)]">
+                    Browse model families and select a card to inspect details.
+                  </p>
+                </div>
+                <div className="text-xs uppercase tracking-[0.2em] text-[color:var(--muted)]">
+                  Under model library
                 </div>
               </div>
               {modelsError ? (
@@ -1421,27 +1737,6 @@ function App() {
                 </div>
               ) : (
                 <div className="mt-6 space-y-6">
-                  <div className="company-grid">
-                    {companySummaries.map((company) => (
-                      <button
-                        key={company.provider}
-                        type="button"
-                        className={`company-card tone-${company.tone} ${selectedCompany === company.provider ? 'active' : ''}`}
-                        onClick={() => handleSelectCompany(company.provider)}
-                      >
-                        <div className="company-card-head">
-                          <span className="company-name">{company.provider}</span>
-                          <span className="company-total">{company.total} models</span>
-                        </div>
-                        <div className="company-status-row">
-                          <span>Can Run: {company.canRun}</span>
-                          <span>Maybe: {company.maybe}</span>
-                          <span>Cannot: {company.cannot}</span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-
                   {selectedCompany ? (
                     filteredModels.length === 0 ? (
                       <div className="empty-state">
@@ -1521,16 +1816,18 @@ function App() {
                                           {modelsToShow.map((model) => {
                                             const id = getModelId(model)
                                             const isActive = selectedModelId === id
-                                            const paramsB = parseParamCount(
+                                            const paramsB = model.active_params_b ?? parseParamCount(
                                               model.parameter_count,
                                             )
-                                            const tokens = applyChipPerformanceFactor(
-                                              estimateTokensPerSec(
-                                                paramsB,
-                                                effectiveHardware,
-                                              ),
-                                              selectedChipProfile,
-                                            )
+                                            const perf = estimatePerformanceRange({
+                                              paramsB,
+                                              quant: 'INT8',
+                                              contextTokens: model.context_windows?.[0] || 4096,
+                                              profile: effectiveHardwareProfile,
+                                              chipMultiplier:
+                                                selectedChipProfile?.speedMultiplier || 1,
+                                              calibrationMultiplier,
+                                            })
                                             const summary =
                                               compatibilityById.get(id) || 'Unknown'
                                             const unavailable =
@@ -1580,7 +1877,10 @@ function App() {
                                                     Est. speed
                                                   </span>
                                                   <span className="mono">
-                                                    {formatTokensPerSec(tokens)}
+                                                    {formatSpeedRange(
+                                                      perf.expectedTokPerSec,
+                                                      perf.conservativeTokPerSec,
+                                                    )}
                                                   </span>
                                                 </div>
                                                 {model.notes ? (
@@ -1604,107 +1904,12 @@ function App() {
                     )
                   ) : (
                     <div className="empty-state">
-                      Select a company card to view all its model families.
+                      Select a company in Model library to view model cards.
                     </div>
                   )}
                 </div>
               )}
             </section>
-            <section className="card p-6 reveal delay-2">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <h2 className="text-xl font-semibold">System hardware</h2>
-                  <p className="mt-1 text-sm text-[color:var(--muted)]">
-                    Collected locally from browser APIs only.
-                  </p>
-                </div>
-                <span
-                  className={`status-pill ${readinessStyles[readiness.tone]}`}
-                >
-                  {readiness.label}
-                </span>
-              </div>
-              <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <div className="stat">
-                  <div className="text-[11px] uppercase text-[color:var(--muted)]">
-                    CPU Threads
-                  </div>
-                  <div className="text-2xl font-semibold">
-                    {hardware.cpuCores || '--'}
-                  </div>
-                  <div className="text-xs text-[color:var(--muted)]">
-                    Hardware concurrency
-                  </div>
-                </div>
-                <div className="stat">
-                  <div className="text-[11px] uppercase text-[color:var(--muted)]">
-                    System RAM
-                  </div>
-                  <div className="text-2xl font-semibold">
-                    {formatRam(effectiveRamGb)}
-                  </div>
-                  <div className="text-xs text-[color:var(--muted)]">
-                    {ramSourceLabel}
-                  </div>
-                  {selectedChipProfile ? (
-                    <p className="mt-2 text-xs text-[color:var(--muted)]">
-                      {selectedChipProfile.note} RAM preset: {selectedChipProfile.recommendedRamGb} GB.
-                    </p>
-                  ) : null}
-                  {!selectedChipProfile && appleDeviceHint ? (
-                    <p className="mt-2 text-xs text-[color:var(--muted)]">
-                      {appleDeviceHint}
-                    </p>
-                  ) : null}
-                </div>
-                <div className="stat">
-                  <div className="text-[11px] uppercase text-[color:var(--muted)]">
-                    GPU Renderer
-                  </div>
-                  <div className="text-lg font-semibold" title={gpuInfo.renderer}>
-                    {gpuInfo.renderer}
-                  </div>
-                  <div className="text-xs text-[color:var(--muted)]">
-                    {gpuInfo.vendor}
-                  </div>
-                </div>
-                <div className="stat">
-                  <div className="text-[11px] uppercase text-[color:var(--muted)]">
-                    Graphics API
-                  </div>
-                  <div className="text-2xl font-semibold">{gpuInfo.api}</div>
-                  <div className="text-xs text-[color:var(--muted)]">
-                    WebGL detection
-                  </div>
-                </div>
-                <div className="stat">
-                  <div className="text-[11px] uppercase text-[color:var(--muted)]">
-                    WebGPU
-                  </div>
-                  <div className="text-2xl font-semibold">
-                    {hardware.webgpu ? 'Yes' : 'No'}
-                  </div>
-                  <div className="text-xs text-[color:var(--muted)]">
-                    GPU compute in browser
-                  </div>
-                </div>
-                <div className="stat">
-                  <div className="text-[11px] uppercase text-[color:var(--muted)]">
-                    Platform
-                  </div>
-                  <div className="text-2xl font-semibold">
-                    {hardware.platform}
-                  </div>
-                  <div className="text-xs text-[color:var(--muted)]">
-                    {gpuInfo.available ? 'GPU detected' : 'GPU not detected'}
-                  </div>
-                </div>
-              </div>
-              <p className="mt-5 text-xs text-[color:var(--muted)] mono break-all">
-                User agent: {hardware.userAgent}
-              </p>
-            </section>
-
           </div>
 
           <aside className="detail-panel card card-strong p-5 sm:p-6 reveal delay-3">
@@ -1773,6 +1978,9 @@ function App() {
                     <div className="text-lg font-semibold">
                       {selectedModel.parameter_count}
                     </div>
+                    <div className="text-xs text-[color:var(--muted)]">
+                      Active: {selectedModel.active_params_b ? `${selectedModel.active_params_b}B` : 'Unknown'}
+                    </div>
                   </div>
                   <div className="stat">
                     <div className="text-[11px] uppercase text-[color:var(--muted)]">
@@ -1787,7 +1995,13 @@ function App() {
                       Est. speed
                     </div>
                     <div className="text-lg font-semibold">
-                      {formatTokensPerSec(selectedTokens)}
+                      {formatSpeedRange(
+                        selectedPerformance.expectedTokPerSec,
+                        selectedPerformance.conservativeTokPerSec,
+                      )}
+                    </div>
+                    <div className="text-xs text-[color:var(--muted)]">
+                      {formatPerfLatency(selectedPerformance.firstTokenLatencyMs)}
                     </div>
                   </div>
                   <div className="stat sm:col-span-2">
@@ -1830,6 +2044,9 @@ function App() {
                     <div className="text-sm font-semibold break-all">
                       {selectedModel.huggingface_repo || 'Not listed'}
                     </div>
+                    <div className="text-xs text-[color:var(--muted)] mt-1">
+                      Context: {(selectedModel.context_windows || [4096]).join(', ')} tokens
+                    </div>
                   </div>
                 </div>
 
@@ -1854,6 +2071,72 @@ function App() {
                         ? 'Copied'
                         : 'Copy Repo ID'}
                     </button>
+                  </div>
+                ) : null}
+
+                {selectedModel.huggingface_repo ? (
+                  <div className="runtime-recipes mt-4">
+                    {(['ollama', 'lmstudio'] as RuntimeId[]).map((runtime) => {
+                      const command = getRuntimeRecipeCommand(
+                        selectedModel,
+                        runtime,
+                        recommendedQuant,
+                      )
+                      if (!command) return null
+                      const runtimeLabel =
+                        runtime === 'ollama'
+                          ? 'Ollama'
+                          : runtime === 'lmstudio'
+                            ? 'LM Studio'
+                            : 'llama.cpp'
+                      return (
+                        <div key={runtime} className="runtime-recipe-card">
+                          <div className="runtime-recipe-head">
+                            <span className="runtime-recipe-label">{runtimeLabel}</span>
+                            <div className="runtime-recipe-actions">
+                              {getRuntimeDownloadUrl(runtime) ? (
+                                <a
+                                  className="pill-button"
+                                  href={getRuntimeDownloadUrl(runtime) || '#'}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  Download here
+                                </a>
+                              ) : null}
+                              {runtime === 'ollama' ? (
+                                <button
+                                  type="button"
+                                  className="pill-button"
+                                  onClick={() => handleCopyCommand(OLLAMA_INSTALL_COMMAND)}
+                                >
+                                  {copiedCommand === OLLAMA_INSTALL_COMMAND ? 'Copied' : 'Copy install'}
+                                </button>
+                              ) : null}
+                              {runtime === 'ollama' ? (
+                                <button
+                                  type="button"
+                                  className="pill-button"
+                                  onClick={() => handleCopyCommand(command)}
+                                >
+                                  {copiedCommand === command ? 'Copied' : 'Copy run'}
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="runtime-recipe-command">
+                            {runtime === 'ollama' ? (
+                              <>
+                                <div className="mono">Install: {OLLAMA_INSTALL_COMMAND}</div>
+                                <div className="mono mt-1">Run: {command}</div>
+                              </>
+                            ) : (
+                              <div>Download LM Studio, open the app, and search for "{selectedModel.name}".</div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 ) : null}
 
@@ -1928,11 +2211,16 @@ function App() {
                                 </span>
                               </td>
                               <td>
-                                <span
-                                  className={`status-pill ${recommendationStyles[row.recommendation.tone]}`}
-                                >
-                                  {row.recommendation.label}
-                                </span>
+                                <div className="quant-fit-cell">
+                                  <span
+                                    className={`status-pill ${recommendationStyles[row.recommendation.tone]}`}
+                                  >
+                                    {row.recommendation.label}
+                                  </span>
+                                  <div className="text-xs text-[color:var(--muted)]">
+                                    {row.detail.reason}
+                                  </div>
+                                </div>
                               </td>
                             </tr>
                           ))}
@@ -1943,6 +2231,9 @@ function App() {
                   <p className="mt-3 text-xs text-[color:var(--muted)]">
                     FP16 and other full-precision links open the official repo.
                     Lower-bit quants search Hugging Face for matching downloads.
+                  </p>
+                  <p className="mt-2 text-xs text-[color:var(--muted)]">
+                    Performance confidence: {selectedPerformance.confidence}. {selectedPerformance.explanation}
                   </p>
                 </div>
 
@@ -1972,6 +2263,137 @@ function App() {
             )}
           </aside>
         </main>
+
+        <section className="card p-6 reveal delay-2 mt-8">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-semibold">System hardware</h2>
+              <p className="mt-1 text-sm text-[color:var(--muted)]">
+                Collected locally, then confidence-scored from measured and reported signals.
+              </p>
+            </div>
+            <span
+              className={`status-pill ${readinessStyles[readiness.tone]}`}
+            >
+              {readiness.label}
+            </span>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="status-pill bg-slate-100 text-slate-700 border border-slate-200">
+              {getConfidenceLabel(effectiveHardwareProfile.confidenceScore)}
+            </span>
+            <span className="text-xs text-[color:var(--muted)]">
+              Confidence score: {effectiveHardwareProfile.confidenceScore}%
+            </span>
+            <span className="text-xs text-[color:var(--muted)]">
+              Tier: {effectiveHardwareProfile.performanceTier}
+            </span>
+          </div>
+          <div className="mt-3 calibration-row">
+            <button
+              type="button"
+              className="pill-button"
+              onClick={() => {
+                void runCalibration()
+              }}
+              disabled={benchmarkState.running}
+            >
+              {benchmarkState.running ? 'Calibrating...' : 'Run 20s local calibration'}
+            </button>
+            <span className="text-xs text-[color:var(--muted)]">
+              {benchmarkState.result
+                ? `Calibration factor ${benchmarkState.result.suggestedMultiplier.toFixed(2)} from ${benchmarkState.result.scoreOpsPerSec.toLocaleString()} ops/s.`
+                : 'Optional: run this once to improve estimate accuracy on your device.'}
+            </span>
+          </div>
+          {benchmarkState.error ? (
+            <div className="empty-state mt-2">{benchmarkState.error}</div>
+          ) : null}
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="stat">
+              <div className="text-[11px] uppercase text-[color:var(--muted)]">
+                CPU Threads
+              </div>
+              <div className="text-2xl font-semibold">
+                {effectiveHardwareProfile.system.cpuCores || '--'}
+              </div>
+              <div className="text-xs text-[color:var(--muted)]">
+                {effectiveHardwareProfile.cpuCores.source}
+              </div>
+            </div>
+            <div className="stat">
+              <div className="text-[11px] uppercase text-[color:var(--muted)]">
+                System RAM
+              </div>
+              <div className="text-2xl font-semibold">
+                {formatRam(effectiveRamGb)}
+              </div>
+              <div className="text-xs text-[color:var(--muted)]">
+                {ramSourceLabel}
+              </div>
+              {selectedChipProfile ? (
+                <p className="mt-2 text-xs text-[color:var(--muted)]">
+                  {selectedChipProfile.note} RAM preset: {selectedChipProfile.recommendedRamGb} GB.
+                </p>
+              ) : null}
+              {!selectedChipProfile && appleDeviceHint ? (
+                <p className="mt-2 text-xs text-[color:var(--muted)]">
+                  {appleDeviceHint}
+                </p>
+              ) : null}
+            </div>
+            <div className="stat">
+              <div className="text-[11px] uppercase text-[color:var(--muted)]">
+                GPU Renderer
+              </div>
+              <div className="text-lg font-semibold" title={effectiveHardwareProfile.gpu.renderer}>
+                {effectiveHardwareProfile.gpu.renderer}
+              </div>
+              <div className="text-xs text-[color:var(--muted)]">
+                {effectiveHardwareProfile.gpu.vendor}
+              </div>
+            </div>
+            <div className="stat">
+              <div className="text-[11px] uppercase text-[color:var(--muted)]">
+                Graphics API
+              </div>
+              <div className="text-2xl font-semibold">{effectiveHardwareProfile.gpu.api}</div>
+              <div className="text-xs text-[color:var(--muted)]">
+                Probe: {effectiveHardwareProfile.graphicsProbeScore === null ? '--' : effectiveHardwareProfile.graphicsProbeScore.toFixed(2)} loops/ms
+              </div>
+            </div>
+            <div className="stat">
+              <div className="text-[11px] uppercase text-[color:var(--muted)]">
+                WebGPU
+              </div>
+              <div className="text-2xl font-semibold">
+                {effectiveHardwareProfile.system.webgpu ? 'Yes' : 'No'}
+              </div>
+              <div className="text-xs text-[color:var(--muted)]">
+                {effectiveHardwareProfile.webgpu.note}
+              </div>
+            </div>
+            <div className="stat">
+              <div className="text-[11px] uppercase text-[color:var(--muted)]">
+                Platform
+              </div>
+              <div className="text-2xl font-semibold">
+                {effectiveHardwareProfile.system.platform}
+              </div>
+              <div className="text-xs text-[color:var(--muted)]">
+                {effectiveHardwareProfile.gpu.available ? 'GPU detected' : 'GPU not detected'}
+              </div>
+            </div>
+          </div>
+          {effectiveHardwareProfile.unresolved.length > 0 ? (
+            <div className="empty-state mt-4">
+              {effectiveHardwareProfile.unresolved[0]}
+            </div>
+          ) : null}
+          <p className="mt-5 text-xs text-[color:var(--muted)] mono break-all">
+            User agent: {effectiveHardwareProfile.system.userAgent}
+          </p>
+        </section>
       </div>
     </div>
   )

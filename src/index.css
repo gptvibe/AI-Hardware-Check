@@ -512,6 +512,87 @@ button {
   align-items: end;
 }
 
+.top-dual {
+
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 1fr);
+  align-items: start;
+}
+
+.guided-grid {
+
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.guided-result {
+
+  border-radius: 14px;
+  border: 1px dashed var(--border);
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.calibration-row {
+
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.runtime-recipes {
+
+  display: grid;
+  gap: 10px;
+}
+
+.runtime-recipe-card {
+
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 10px;
+}
+
+.runtime-recipe-head {
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.runtime-recipe-actions {
+
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.runtime-recipe-label {
+
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.runtime-recipe-command {
+
+  margin-top: 8px;
+  font-size: 12px;
+  word-break: break-word;
+}
+
+[data-theme="dark"] .guided-result {
+
+  background: rgba(15, 22, 23, 0.55);
+}
+
 
 .search-field,
 .filter-field {
@@ -697,6 +778,12 @@ button {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.quant-fit-cell {
+
+  display: grid;
+  gap: 6px;
 }
 
 
@@ -1054,6 +1141,11 @@ button {
 
 @media (max-width: 1100px) {
 
+  .top-dual {
+
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .library-toolbar {
 
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1067,6 +1159,11 @@ button {
 
 
 @media (max-width: 720px) {
+
+  .guided-grid {
+
+    grid-template-columns: minmax(0, 1fr);
+  }
 
   .library-toolbar {
 
@@ -1093,6 +1190,17 @@ button {
 
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .runtime-recipe-head {
+
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .runtime-recipe-actions {
+
+    width: 100%;
   }
 }
 

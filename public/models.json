@@ -5,7 +5,17 @@
     "name": "Llama 3.1 8B Instruct",
     "huggingface_repo": "meta-llama/Llama-3.1-8B-Instruct",
     "parameter_count": "8B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ],
+    "context_windows": [
+      4096
+    ],
+    "runtime_recipe_templates": {
+      "ollama": "ollama run hf.co/{repo}:{quant_tag}",
+      "llamacpp": "llama-cli -hf {repo} -ngl 999 -c {context}"
+    },
+    "active_params_b": 8
   },
   {
     "provider": "Meta",
@@ -13,7 +23,17 @@
     "name": "Llama 3.1 70B Instruct",
     "huggingface_repo": "meta-llama/Llama-3.1-70B-Instruct",
     "parameter_count": "70B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ],
+    "context_windows": [
+      4096
+    ],
+    "runtime_recipe_templates": {
+      "ollama": "ollama run hf.co/{repo}:{quant_tag}",
+      "llamacpp": "llama-cli -hf {repo} -ngl 999 -c {context}"
+    },
+    "active_params_b": 70
   },
   {
     "provider": "Meta",
@@ -21,7 +41,17 @@
     "name": "Llama 3.1 405B Instruct",
     "huggingface_repo": "meta-llama/Llama-3.1-405B-Instruct",
     "parameter_count": "405B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ],
+    "context_windows": [
+      4096
+    ],
+    "runtime_recipe_templates": {
+      "ollama": "ollama run hf.co/{repo}:{quant_tag}",
+      "llamacpp": "llama-cli -hf {repo} -ngl 999 -c {context}"
+    },
+    "active_params_b": 405
   },
   {
     "provider": "Meta",
@@ -29,8 +59,21 @@
     "name": "Llama 3.2 11B",
     "huggingface_repo": "meta-llama/Llama-3.2-11B-Vision-Instruct",
     "parameter_count": "11B",
-    "modalities": ["Text", "Image"],
-    "formats": ["Safetensors"]
+    "modalities": [
+      "Text",
+      "Image"
+    ],
+    "formats": [
+      "Safetensors"
+    ],
+    "context_windows": [
+      4096
+    ],
+    "runtime_recipe_templates": {
+      "ollama": "ollama run hf.co/{repo}:{quant_tag}",
+      "llamacpp": "llama-cli -hf {repo} -ngl 999 -c {context}"
+    },
+    "active_params_b": 11
   },
   {
     "provider": "Meta",
@@ -38,8 +81,21 @@
     "name": "Llama 3.2 90B",
     "huggingface_repo": "meta-llama/Llama-3.2-90B-Vision-Instruct",
     "parameter_count": "90B",
-    "modalities": ["Text", "Image"],
-    "formats": ["Safetensors"]
+    "modalities": [
+      "Text",
+      "Image"
+    ],
+    "formats": [
+      "Safetensors"
+    ],
+    "context_windows": [
+      4096
+    ],
+    "runtime_recipe_templates": {
+      "ollama": "ollama run hf.co/{repo}:{quant_tag}",
+      "llamacpp": "llama-cli -hf {repo} -ngl 999 -c {context}"
+    },
+    "active_params_b": 90
   },
   {
     "provider": "Meta",
@@ -47,7 +103,17 @@
     "name": "Llama 3.3 70B",
     "huggingface_repo": "meta-llama/Llama-3.3-70B-Instruct",
     "parameter_count": "70B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ],
+    "context_windows": [
+      4096
+    ],
+    "runtime_recipe_templates": {
+      "ollama": "ollama run hf.co/{repo}:{quant_tag}",
+      "llamacpp": "llama-cli -hf {repo} -ngl 999 -c {context}"
+    },
+    "active_params_b": 70
   },
   {
     "provider": "Meta",
@@ -55,8 +121,21 @@
     "name": "Llama 4 109B",
     "huggingface_repo": "meta-llama/Llama-4-Scout-17B-16E",
     "parameter_count": "109B",
-    "modalities": ["Text", "Image"],
-    "formats": ["Safetensors"]
+    "modalities": [
+      "Text",
+      "Image"
+    ],
+    "formats": [
+      "Safetensors"
+    ],
+    "context_windows": [
+      4096
+    ],
+    "runtime_recipe_templates": {
+      "ollama": "ollama run hf.co/{repo}:{quant_tag}",
+      "llamacpp": "llama-cli -hf {repo} -ngl 999 -c {context}"
+    },
+    "active_params_b": 109
   },
   {
     "provider": "Meta",
@@ -64,8 +143,21 @@
     "name": "Llama 4 400B",
     "huggingface_repo": "meta-llama/Llama-4-Maverick-17B-128E",
     "parameter_count": "400B",
-    "modalities": ["Text", "Image"],
-    "formats": ["Safetensors"]
+    "modalities": [
+      "Text",
+      "Image"
+    ],
+    "formats": [
+      "Safetensors"
+    ],
+    "context_windows": [
+      4096
+    ],
+    "runtime_recipe_templates": {
+      "ollama": "ollama run hf.co/{repo}:{quant_tag}",
+      "llamacpp": "llama-cli -hf {repo} -ngl 999 -c {context}"
+    },
+    "active_params_b": 400
   },
   {
     "provider": "Meta",
@@ -73,8 +165,21 @@
     "name": "Llama 4 Scout",
     "huggingface_repo": "meta-llama/Llama-4-Scout-17B-16E-Instruct",
     "parameter_count": "109B",
-    "modalities": ["Text", "Image"],
-    "formats": ["Safetensors"]
+    "modalities": [
+      "Text",
+      "Image"
+    ],
+    "formats": [
+      "Safetensors"
+    ],
+    "context_windows": [
+      4096
+    ],
+    "runtime_recipe_templates": {
+      "ollama": "ollama run hf.co/{repo}:{quant_tag}",
+      "llamacpp": "llama-cli -hf {repo} -ngl 999 -c {context}"
+    },
+    "active_params_b": 109
   },
   {
     "provider": "Meta",
@@ -82,8 +187,21 @@
     "name": "Llama 4 Maverick",
     "huggingface_repo": "meta-llama/Llama-4-Maverick-17B-128E-Instruct",
     "parameter_count": "400B",
-    "modalities": ["Text", "Image"],
-    "formats": ["Safetensors"]
+    "modalities": [
+      "Text",
+      "Image"
+    ],
+    "formats": [
+      "Safetensors"
+    ],
+    "context_windows": [
+      4096
+    ],
+    "runtime_recipe_templates": {
+      "ollama": "ollama run hf.co/{repo}:{quant_tag}",
+      "llamacpp": "llama-cli -hf {repo} -ngl 999 -c {context}"
+    },
+    "active_params_b": 400
   },
   {
     "provider": "OpenAI",
@@ -91,7 +209,17 @@
     "name": "GPT-2 (124M)",
     "huggingface_repo": "openai-community/gpt2",
     "parameter_count": "124M",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ],
+    "context_windows": [
+      4096
+    ],
+    "runtime_recipe_templates": {
+      "ollama": "ollama run hf.co/{repo}:{quant_tag}",
+      "llamacpp": "llama-cli -hf {repo} -ngl 999 -c {context}"
+    },
+    "active_params_b": 0.12
   },
   {
     "provider": "OpenAI",
@@ -99,7 +227,17 @@
     "name": "GPT-2 Medium (355M)",
     "huggingface_repo": "openai-community/gpt2-medium",
     "parameter_count": "355M",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ],
+    "context_windows": [
+      4096
+    ],
+    "runtime_recipe_templates": {
+      "ollama": "ollama run hf.co/{repo}:{quant_tag}",
+      "llamacpp": "llama-cli -hf {repo} -ngl 999 -c {context}"
+    },
+    "active_params_b": 0.35
   },
   {
     "provider": "OpenAI",
@@ -107,7 +245,17 @@
     "name": "GPT-2 Large (774M)",
     "huggingface_repo": "openai-community/gpt2-large",
     "parameter_count": "774M",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ],
+    "context_windows": [
+      4096
+    ],
+    "runtime_recipe_templates": {
+      "ollama": "ollama run hf.co/{repo}:{quant_tag}",
+      "llamacpp": "llama-cli -hf {repo} -ngl 999 -c {context}"
+    },
+    "active_params_b": 0.77
   },
   {
     "provider": "OpenAI",
@@ -115,7 +263,17 @@
     "name": "GPT-2 XL (1.5B)",
     "huggingface_repo": "openai-community/gpt2-xl",
     "parameter_count": "1.5B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ],
+    "context_windows": [
+      4096
+    ],
+    "runtime_recipe_templates": {
+      "ollama": "ollama run hf.co/{repo}:{quant_tag}",
+      "llamacpp": "llama-cli -hf {repo} -ngl 999 -c {context}"
+    },
+    "active_params_b": 1.5
   },
   {
     "provider": "OpenAI",
@@ -123,7 +281,17 @@
     "name": "gpt-oss-20b",
     "huggingface_repo": "openai/gpt-oss-20b",
     "parameter_count": "20B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ],
+    "context_windows": [
+      4096
+    ],
+    "runtime_recipe_templates": {
+      "ollama": "ollama run hf.co/{repo}:{quant_tag}",
+      "llamacpp": "llama-cli -hf {repo} -ngl 999 -c {context}"
+    },
+    "active_params_b": 20
   },
   {
     "provider": "OpenAI",
@@ -131,7 +299,17 @@
     "name": "gpt-oss-120b",
     "huggingface_repo": "openai/gpt-oss-120b",
     "parameter_count": "120B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ],
+    "context_windows": [
+      4096
+    ],
+    "runtime_recipe_templates": {
+      "ollama": "ollama run hf.co/{repo}:{quant_tag}",
+      "llamacpp": "llama-cli -hf {repo} -ngl 999 -c {context}"
+    },
+    "active_params_b": 120
   },
   {
     "provider": "DeepSeek",
@@ -139,7 +317,17 @@
     "name": "DeepSeek R1 (671B)",
     "huggingface_repo": "deepseek-ai/DeepSeek-R1",
     "parameter_count": "671B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ],
+    "context_windows": [
+      4096
+    ],
+    "runtime_recipe_templates": {
+      "ollama": "ollama run hf.co/{repo}:{quant_tag}",
+      "llamacpp": "llama-cli -hf {repo} -ngl 999 -c {context}"
+    },
+    "active_params_b": 671
   },
   {
     "provider": "DeepSeek",
@@ -147,7 +335,17 @@
     "name": "DeepSeek R1 Distill Qwen 1.5B",
     "huggingface_repo": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
     "parameter_count": "1.5B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ],
+    "context_windows": [
+      4096
+    ],
+    "runtime_recipe_templates": {
+      "ollama": "ollama run hf.co/{repo}:{quant_tag}",
+      "llamacpp": "llama-cli -hf {repo} -ngl 999 -c {context}"
+    },
+    "active_params_b": 1.5
   },
   {
     "provider": "DeepSeek",
@@ -155,7 +353,17 @@
     "name": "DeepSeek R1 Distill Qwen 7B",
     "huggingface_repo": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
     "parameter_count": "7B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ],
+    "context_windows": [
+      4096
+    ],
+    "runtime_recipe_templates": {
+      "ollama": "ollama run hf.co/{repo}:{quant_tag}",
+      "llamacpp": "llama-cli -hf {repo} -ngl 999 -c {context}"
+    },
+    "active_params_b": 7
   },
   {
     "provider": "DeepSeek",
@@ -163,7 +371,17 @@
     "name": "DeepSeek R1 Distill Qwen 14B",
     "huggingface_repo": "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
     "parameter_count": "14B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ],
+    "context_windows": [
+      4096
+    ],
+    "runtime_recipe_templates": {
+      "ollama": "ollama run hf.co/{repo}:{quant_tag}",
+      "llamacpp": "llama-cli -hf {repo} -ngl 999 -c {context}"
+    },
+    "active_params_b": 14
   },
   {
     "provider": "DeepSeek",
@@ -171,7 +389,9 @@
     "name": "DeepSeek R1 Distill Qwen 32B",
     "huggingface_repo": "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
     "parameter_count": "32B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "DeepSeek",
@@ -179,7 +399,9 @@
     "name": "DeepSeek R1 Distill Llama 70B",
     "huggingface_repo": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
     "parameter_count": "70B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "DeepSeek",
@@ -187,7 +409,9 @@
     "name": "DeepSeek V2.5",
     "huggingface_repo": "deepseek-ai/DeepSeek-V2.5",
     "parameter_count": "236B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "DeepSeek",
@@ -195,7 +419,10 @@
     "name": "DeepSeek V3",
     "huggingface_repo": "deepseek-ai/DeepSeek-V3",
     "parameter_count": "671B",
-    "formats": ["Safetensors", "FP8"]
+    "formats": [
+      "Safetensors",
+      "FP8"
+    ]
   },
   {
     "provider": "DeepSeek",
@@ -203,7 +430,10 @@
     "name": "DeepSeek V3.1",
     "huggingface_repo": "deepseek-ai/DeepSeek-V3.1",
     "parameter_count": "671B",
-    "formats": ["Safetensors", "FP8"]
+    "formats": [
+      "Safetensors",
+      "FP8"
+    ]
   },
   {
     "provider": "Z.ai",
@@ -211,7 +441,9 @@
     "name": "GLM-5",
     "huggingface_repo": "zai-org/GLM-5",
     "parameter_count": "744B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Z.ai",
@@ -219,7 +451,9 @@
     "name": "GLM-4.7",
     "huggingface_repo": "zai-org/GLM-4.7",
     "parameter_count": "218B",
-    "formats": ["Safetensors"],
+    "formats": [
+      "Safetensors"
+    ],
     "notes": "Parameter count follows the widely used 218B-A32B open-weight variant naming on Hugging Face."
   },
   {
@@ -228,7 +462,9 @@
     "name": "GLM-4.7-Flash",
     "huggingface_repo": "zai-org/GLM-4.7-Flash",
     "parameter_count": "30B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Z.ai",
@@ -236,7 +472,9 @@
     "name": "GLM-4.6",
     "huggingface_repo": "zai-org/GLM-4.6",
     "parameter_count": "218B",
-    "formats": ["Safetensors"],
+    "formats": [
+      "Safetensors"
+    ],
     "notes": "Parameter count follows the commonly published 218B-A32B GLM-4.6 open-weight variants on Hugging Face."
   },
   {
@@ -245,8 +483,14 @@
     "name": "GLM-4.6V-Flash",
     "huggingface_repo": "zai-org/GLM-4.6V-Flash",
     "parameter_count": "9B",
-    "modalities": ["Text", "Image", "Video"],
-    "formats": ["Safetensors"]
+    "modalities": [
+      "Text",
+      "Image",
+      "Video"
+    ],
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Z.ai",
@@ -254,8 +498,14 @@
     "name": "GLM-4.6V",
     "huggingface_repo": "zai-org/GLM-4.6V",
     "parameter_count": "106B",
-    "modalities": ["Text", "Image", "Video"],
-    "formats": ["Safetensors"]
+    "modalities": [
+      "Text",
+      "Image",
+      "Video"
+    ],
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "MiniMax",
@@ -263,7 +513,10 @@
     "name": "MiniMax-M2",
     "huggingface_repo": "MiniMaxAI/MiniMax-M2",
     "parameter_count": "228.7B",
-    "formats": ["Safetensors", "FP8"],
+    "formats": [
+      "Safetensors",
+      "FP8"
+    ],
     "notes": "Parameter count is derived from the official Hugging Face safetensors total."
   },
   {
@@ -272,7 +525,10 @@
     "name": "MiniMax-M2.1",
     "huggingface_repo": "MiniMaxAI/MiniMax-M2.1",
     "parameter_count": "228.7B",
-    "formats": ["Safetensors", "FP8"],
+    "formats": [
+      "Safetensors",
+      "FP8"
+    ],
     "notes": "Parameter count is derived from the official Hugging Face safetensors total."
   },
   {
@@ -281,7 +537,10 @@
     "name": "MiniMax-M2.5",
     "huggingface_repo": "MiniMaxAI/MiniMax-M2.5",
     "parameter_count": "228.7B",
-    "formats": ["Safetensors", "FP8"],
+    "formats": [
+      "Safetensors",
+      "FP8"
+    ],
     "notes": "Parameter count is derived from the official Hugging Face safetensors total."
   },
   {
@@ -290,7 +549,9 @@
     "name": "Mistral 7B Instruct v0.3",
     "huggingface_repo": "mistralai/Mistral-7B-Instruct-v0.3",
     "parameter_count": "7B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Mistral",
@@ -298,8 +559,13 @@
     "name": "Voxtral-Mini-4B",
     "huggingface_repo": "mistralai/Voxtral-Mini-4B-Realtime-2602",
     "parameter_count": "4B",
-    "modalities": ["Text", "Audio"],
-    "formats": ["Safetensors"]
+    "modalities": [
+      "Text",
+      "Audio"
+    ],
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Mistral",
@@ -307,7 +573,9 @@
     "name": "Mistral Small",
     "huggingface_repo": "mistralai/Mistral-Small-3.2-24B-Instruct-2506",
     "parameter_count": "24B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Mistral",
@@ -315,7 +583,10 @@
     "name": "Mistral Large",
     "huggingface_repo": "mistralai/Mistral-Large-3-675B-Instruct-2512",
     "parameter_count": "675B",
-    "formats": ["Safetensors", "FP8"]
+    "formats": [
+      "Safetensors",
+      "FP8"
+    ]
   },
   {
     "provider": "Mistral",
@@ -323,7 +594,9 @@
     "name": "Mixtral 8x7B Instruct v0.1",
     "huggingface_repo": "mistralai/Mixtral-8x7B-Instruct-v0.1",
     "parameter_count": "47B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Mistral",
@@ -331,7 +604,9 @@
     "name": "Mixtral 8x22B Instruct v0.1",
     "huggingface_repo": "mistralai/Mixtral-8x22B-Instruct-v0.1",
     "parameter_count": "141B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Alibaba",
@@ -339,7 +614,9 @@
     "name": "Qwen2.5 7B Instruct",
     "huggingface_repo": "Qwen/Qwen2.5-7B-Instruct",
     "parameter_count": "7B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Alibaba",
@@ -347,7 +624,9 @@
     "name": "Qwen2.5 14B Instruct",
     "huggingface_repo": "Qwen/Qwen2.5-14B-Instruct",
     "parameter_count": "14B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Alibaba",
@@ -355,7 +634,9 @@
     "name": "Qwen2.5 32B Instruct",
     "huggingface_repo": "Qwen/Qwen2.5-32B-Instruct",
     "parameter_count": "32B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Alibaba",
@@ -363,7 +644,9 @@
     "name": "Qwen2.5 72B Instruct",
     "huggingface_repo": "Qwen/Qwen2.5-72B-Instruct",
     "parameter_count": "72B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Alibaba",
@@ -371,7 +654,9 @@
     "name": "Qwen 3.5",
     "huggingface_repo": "Qwen/Qwen3.5-35B-A3B",
     "parameter_count": "35B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Alibaba",
@@ -379,7 +664,9 @@
     "name": "Qwen 3",
     "huggingface_repo": "Qwen/Qwen3-30B-A3B",
     "parameter_count": "30B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Alibaba",
@@ -387,7 +674,9 @@
     "name": "Qwen 3 32B",
     "huggingface_repo": "Qwen/Qwen3-32B",
     "parameter_count": "32B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Alibaba",
@@ -395,7 +684,9 @@
     "name": "Qwen 3 235B",
     "huggingface_repo": "Qwen/Qwen3-235B-A22B-Instruct-2507",
     "parameter_count": "235B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Alibaba",
@@ -403,7 +694,10 @@
     "name": "Qwen 3 Coder",
     "huggingface_repo": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
     "parameter_count": "30B",
-    "formats": ["Safetensors", "FP8"]
+    "formats": [
+      "Safetensors",
+      "FP8"
+    ]
   },
   {
     "provider": "Alibaba",
@@ -411,8 +705,15 @@
     "name": "Qwen VL",
     "huggingface_repo": "Qwen/Qwen3-VL-235B-A22B-Thinking",
     "parameter_count": "235B",
-    "modalities": ["Text", "Image", "Video"],
-    "formats": ["Safetensors", "FP8"]
+    "modalities": [
+      "Text",
+      "Image",
+      "Video"
+    ],
+    "formats": [
+      "Safetensors",
+      "FP8"
+    ]
   },
   {
     "provider": "Google",
@@ -420,7 +721,9 @@
     "name": "Gemma 2 2B IT",
     "huggingface_repo": "google/gemma-2-2b-it",
     "parameter_count": "2B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Google",
@@ -428,7 +731,9 @@
     "name": "Gemma 2 9B IT",
     "huggingface_repo": "google/gemma-2-9b-it",
     "parameter_count": "9B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Google",
@@ -436,7 +741,9 @@
     "name": "Gemma 2 27B IT",
     "huggingface_repo": "google/gemma-2-27b-it",
     "parameter_count": "27B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Google",
@@ -444,8 +751,13 @@
     "name": "Gemma 3 27B",
     "huggingface_repo": "google/gemma-3-27b-it",
     "parameter_count": "27B",
-    "modalities": ["Text", "Image"],
-    "formats": ["Safetensors"]
+    "modalities": [
+      "Text",
+      "Image"
+    ],
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Moonshot AI",
@@ -453,7 +765,9 @@
     "name": "Kimi K2",
     "huggingface_repo": "moonshotai/Kimi-K2-Instruct-0905",
     "parameter_count": "1T",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Moonshot AI",
@@ -461,8 +775,13 @@
     "name": "Kimi K2.5",
     "huggingface_repo": "moonshotai/Kimi-K2.5",
     "parameter_count": "1T",
-    "modalities": ["Text", "Image"],
-    "formats": ["Safetensors"]
+    "modalities": [
+      "Text",
+      "Image"
+    ],
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Microsoft",
@@ -470,7 +789,9 @@
     "name": "Phi-3 Mini 4K Instruct",
     "huggingface_repo": "microsoft/Phi-3-mini-4k-instruct",
     "parameter_count": "3.8B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Microsoft",
@@ -478,7 +799,9 @@
     "name": "Phi-3 Small 8K Instruct",
     "huggingface_repo": "microsoft/Phi-3-small-8k-instruct",
     "parameter_count": "7B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   },
   {
     "provider": "Microsoft",
@@ -486,6 +809,8 @@
     "name": "Phi-3 Medium 4K Instruct",
     "huggingface_repo": "microsoft/Phi-3-medium-4k-instruct",
     "parameter_count": "14B",
-    "formats": ["Safetensors"]
+    "formats": [
+      "Safetensors"
+    ]
   }
 ]

@@ -15,6 +15,9 @@ export type ModelDatabaseEntry = {
   formats: string[]
   ram_requirements_gb: Record<string, number>
   notes?: string
+  active_params_b?: number
+  context_windows?: number[]
+  runtime_recipe_templates?: Partial<Record<'ollama' | 'lmstudio' | 'llamacpp', string>>
   userAdded?: boolean
 }
 
@@ -29,9 +32,20 @@ export type CompatibilityResult = {
   perQuant: Record<QuantizationKey, CompatibilityStatus>
 }
 
+export type CompatibilityDetail = {
+  status: CompatibilityStatus
+  minimumGb: number | null
+  recommendedGb: number | null
+  headroomGb: number | null
+  reason: string
+}
+
 export const RUNTIME_OVERHEAD = 1.3
 
 const BYTES_PER_B_TO_GIB = 1_000_000_000 / (1024 ** 3)
+const WEIGHT_OVERHEAD_FACTOR = 1.08
+const CACHE_OVERHEAD_GB = 0.35
+const RUNTIME_BASE_OVERHEAD_GB = 0.45
 
 const QUANT_BYTES_PER_PARAM: Record<string, number> = {
   FP16: 2,
@@ -62,19 +76,75 @@ const estimateRamRequirements = (parameterCount: string): Record<string, number>
   if (!paramsB) return {}
   const result: Record<string, number> = {}
   for (const [key, bytes] of Object.entries(QUANT_BYTES_PER_PARAM)) {
-    result[key] = Number((paramsB * bytes * BYTES_PER_B_TO_GIB).toFixed(2))
+    const weightMemory = paramsB * bytes * BYTES_PER_B_TO_GIB * WEIGHT_OVERHEAD_FACTOR
+    const required = weightMemory + CACHE_OVERHEAD_GB + RUNTIME_BASE_OVERHEAD_GB
+    result[key] = Number(required.toFixed(2))
   }
   return result
+}
+
+export const getCompatibilityDetail = (
+  systemRamGb: number | null,
+  requirementGb: number | null,
+): CompatibilityDetail => {
+  if (requirementGb === null) {
+    return {
+      status: 'Unknown',
+      minimumGb: null,
+      recommendedGb: null,
+      headroomGb: null,
+      reason: 'No memory requirement data is available for this quantization.',
+    }
+  }
+
+  const minimumGb = Number(requirementGb.toFixed(2))
+  const recommendedGb = Number((requirementGb * RUNTIME_OVERHEAD).toFixed(2))
+
+  if (systemRamGb === null) {
+    return {
+      status: 'Unknown',
+      minimumGb,
+      recommendedGb,
+      headroomGb: null,
+      reason: `Needs about ${minimumGb} GB minimum (${recommendedGb} GB recommended), but system RAM is unknown.`,
+    }
+  }
+
+  const headroomGb = Number((systemRamGb - recommendedGb).toFixed(2))
+  if (systemRamGb >= recommendedGb) {
+    return {
+      status: 'Can Run',
+      minimumGb,
+      recommendedGb,
+      headroomGb,
+      reason: `Estimated to run comfortably with ${Math.abs(headroomGb).toFixed(1)} GB headroom.`,
+    }
+  }
+
+  if (systemRamGb >= minimumGb) {
+    return {
+      status: 'Maybe',
+      minimumGb,
+      recommendedGb,
+      headroomGb,
+      reason: `May run, but memory is tight. Recommended target is ${recommendedGb} GB.`,
+    }
+  }
+
+  return {
+    status: 'Cannot Run',
+    minimumGb,
+    recommendedGb,
+    headroomGb,
+    reason: `Likely out-of-memory. Needs at least ${minimumGb} GB before runtime overhead.`,
+  }
 }
 
 export const getCompatibilityStatus = (
   systemRamGb: number | null,
   requirementGb: number | null,
 ): CompatibilityStatus => {
-  if (systemRamGb === null || requirementGb === null) return 'Unknown'
-  if (systemRamGb >= requirementGb * RUNTIME_OVERHEAD) return 'Can Run'
-  if (systemRamGb >= requirementGb) return 'Maybe'
-  return 'Cannot Run'
+  return getCompatibilityDetail(systemRamGb, requirementGb).status
 }
 
 const ORDER: QuantizationKey[] = ['FP16', 'INT8', 'INT4']
@@ -136,6 +206,33 @@ export const normalizeModelEntry = (entry: ModelDatabaseEntry): ModelDatabaseEnt
           ),
         )
       : undefined
+  const activeParams =
+    typeof entry.active_params_b === 'number' && Number.isFinite(entry.active_params_b)
+      ? Number(entry.active_params_b)
+      : parseParameterCount(entry.parameter_count)
+  const contextWindows = Array.isArray(entry.context_windows)
+    ? entry.context_windows
+      .filter((value) => typeof value === 'number' && Number.isFinite(value) && value > 0)
+      .map((value) => Math.round(value))
+      .sort((a, b) => a - b)
+    : [4096]
+  const runtimeRecipeTemplates =
+    entry.runtime_recipe_templates && typeof entry.runtime_recipe_templates === 'object'
+      ? {
+          ollama:
+            typeof entry.runtime_recipe_templates.ollama === 'string'
+              ? entry.runtime_recipe_templates.ollama
+              : undefined,
+          lmstudio:
+            typeof entry.runtime_recipe_templates.lmstudio === 'string'
+              ? entry.runtime_recipe_templates.lmstudio
+              : undefined,
+          llamacpp:
+            typeof entry.runtime_recipe_templates.llamacpp === 'string'
+              ? entry.runtime_recipe_templates.llamacpp
+              : undefined,
+        }
+      : undefined
 
   return {
     ...entry,
@@ -147,6 +244,9 @@ export const normalizeModelEntry = (entry: ModelDatabaseEntry): ModelDatabaseEnt
       : ['Text'],
     formats,
     quant_download_links: quantDownloadLinks,
+    active_params_b: activeParams === null ? undefined : Number(activeParams.toFixed(2)),
+    context_windows: contextWindows.length ? contextWindows : [4096],
+    runtime_recipe_templates: runtimeRecipeTemplates,
     ram_requirements_gb: ramRequirements,
   }
 }
