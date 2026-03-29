@@ -527,6 +527,18 @@ button {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.compare-grid {
+
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.compare-tray {
+
+  position: relative;
+}
+
 .guided-result {
 
   border-radius: 14px;
@@ -543,10 +555,206 @@ button {
   gap: 10px;
 }
 
+.benchmark-stack {
+
+  display: grid;
+  gap: 12px;
+}
+
+.benchmark-summary-card {
+
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.58);
+  padding: 14px;
+}
+
+[data-theme="dark"] .benchmark-summary-card {
+
+  background: rgba(15, 22, 23, 0.68);
+}
+
+.benchmark-stat-grid {
+
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.report-view {
+
+  display: grid;
+  gap: 8px;
+}
+
+.report-grid {
+
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.report-section {
+
+  display: grid;
+  gap: 8px;
+}
+
+.companion-grid {
+
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
 .runtime-recipes {
 
   display: grid;
   gap: 10px;
+}
+
+.install-wizard {
+
+  display: grid;
+  gap: 12px;
+}
+
+.install-wizard-head {
+
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.install-wizard-tabs {
+
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.install-wizard-tab {
+
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: border-color 0.2s ease, transform 0.2s ease, color 0.2s ease;
+}
+
+.install-wizard-tab:hover {
+
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.install-wizard-tab.active {
+
+  border-color: rgba(15, 118, 110, 0.35);
+  background: var(--accent-weak);
+  color: var(--accent);
+}
+
+.install-runtime-grid {
+
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.install-runtime-card {
+
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.62);
+  padding: 14px;
+}
+
+[data-theme="dark"] .install-runtime-card {
+
+  background: rgba(15, 22, 23, 0.7);
+}
+
+.runtime-detection {
+
+  margin-bottom: 12px;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.runtime-detection-title {
+
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.install-script-row {
+
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.install-step-list {
+
+  display: grid;
+  gap: 10px;
+}
+
+.install-step {
+
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 12px;
+}
+
+.install-step-title {
+
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.install-step-optional {
+
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.install-step-command {
+
+  margin: 10px 0 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(15, 118, 110, 0.06);
+  border: 1px solid rgba(15, 118, 110, 0.14);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .runtime-recipe-card {
@@ -1196,6 +1404,23 @@ button {
 
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .install-wizard-head {
+
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .install-wizard-tabs {
+
+    width: 100%;
+  }
+
+  .install-wizard-tab {
+
+    flex: 1 1 0;
+    justify-content: center;
   }
 
   .runtime-recipe-actions {
